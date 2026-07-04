@@ -1,6 +1,6 @@
 from pathlib import Path
-from langchain.text_splitter import RecursiveCharacterTextSplitter, Language
-from langchain.schema import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
+from langchain_core.documents import Document
 
 CODE_EXTENSIONS = {".py": Language.PYTHON, ".js": Language.JS, ".ts": Language.TS}
 DOC_EXTENSIONS = {".md", ".rst", ".txt"}
