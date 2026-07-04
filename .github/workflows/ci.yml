@@ -11,6 +11,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,4 +31,3 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
-  
