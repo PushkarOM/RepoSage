@@ -6,4 +6,5 @@ chroma_db/
 cloned_repos/
 *.egg-info/
 .pytest_cache/
-EOF
+
+test_*
