@@ -8,4 +8,4 @@ cloned_repos/
 .pytest_cache/
 *.db
 
-test_*
+test_scritps/*

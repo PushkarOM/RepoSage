@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     embedding_provider: str = "local"
@@ -7,14 +7,18 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./chroma_db"
     clone_dir: str = "./cloned_repos"
 
-    # auth
     jwt_secret_key: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
     demo_username: str = "admin"
-    demo_password_hash: str = ""  # set via .env, generated below
+    demo_password_hash: str = ""
 
-    class Config:
-        env_file = ".env"
+    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = "sqlite:///./reposage.db"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
 settings = Settings()

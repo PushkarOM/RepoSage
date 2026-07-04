@@ -1,12 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from app.core.config import settings
 
-DATABASE_URL = "sqlite:///./reposage.db"
+
 
 # check_same_thread=False is needed specifically for SQLite + FastAPI,
 # since FastAPI can serve a single request across multiple threads
 # and SQLite's default driver assumes one thread per connection.
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
