@@ -46,13 +46,26 @@ def store_documents(docs: list[Document], repo_id: str, job_id: str) -> int:
     store.add_documents(docs)
     return len(docs)
 
-def search(query: str, k: int = 5, doc_type: str | None = None) -> list[Document]:
+def search(query: str, k: int = 5, doc_type: str | None = None, job_id: str | None = None) -> list[Document]:
     """
-    Similarity search over the collection. doc_type ("code" | "doc")
-    filters via metadata instead of needing separate collections —
-    this is the query-time equivalent of the collection split we
-    decided against.
+    Similarity search over the collection, optionally filtered by
+    doc_type ("code"/"doc") and/or job_id. job_id scoping matters once
+    more than one repo is ingested -- without it, results from every
+    ingested repo would be mixed together indiscriminately.
     """
     store = get_vectorstore()
-    filter_dict = {"type": doc_type} if doc_type else None
+
+    conditions = []
+    if doc_type:
+        conditions.append({"type": doc_type})
+    if job_id:
+        conditions.append({"job_id": job_id})
+
+    if not conditions:
+        filter_dict = None
+    elif len(conditions) == 1:
+        filter_dict = conditions[0]
+    else:
+        filter_dict = {"$and": conditions}  # Chroma's syntax for combined conditions
+
     return store.similarity_search(query, k=k, filter=filter_dict)

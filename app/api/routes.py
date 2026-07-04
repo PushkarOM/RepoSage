@@ -6,6 +6,9 @@ from app.ingestion.tasks import ingest_repo_task
 from app.api.schemas import IngestRequest, IngestResponse, StatusResponse
 from app.api.auth import get_current_user
 
+from app.agent.agent import chat as agent_chat
+from app.api.schemas import ChatRequest, ChatResponse
+
 router = APIRouter()
 
 
@@ -39,3 +42,22 @@ def get_status(job_id: str, current_user: str = Depends(get_current_user)):
         response_result = {"error": str(result.result)}
 
     return StatusResponse(job_id=job_id, state=result.state, result=response_result)
+
+@router.post("/chat", response_model=ChatResponse)
+def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user)):
+    """
+    Scopes conversation memory by both the requesting user and the
+    thread_id/job_id -- without the username prefix, two different
+    users chatting about the same job_id would silently share the
+    same conversation history, which is a real bug waiting to happen
+    the moment this has more than one user.
+    """
+    raw_thread_id = request.thread_id or request.job_id
+    thread_id = f"{current_user}:{raw_thread_id}"
+
+    # Inject job_id into the message so the agent knows which repo's
+    # tools to call without the user needing to mention it every turn.
+    contextualized_message = f"[Repository job_id: {request.job_id}]\n{request.message}"
+
+    reply = agent_chat(contextualized_message, thread_id=thread_id)
+    return ChatResponse(thread_id=raw_thread_id, reply=reply)
