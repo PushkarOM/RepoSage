@@ -21,22 +21,30 @@ def get_vectorstore() -> Chroma:
     )
 
 
-def store_documents(docs: list[Document], job_id: str) -> int:
+def store_documents(docs: list[Document], repo_id: str, job_id: str) -> int:
     """
-    Embeds and persists a list of chunks into the shared Chroma collection.
-    Tags every chunk with job_id so a future re-ingestion or multi-repo
-    setup can filter/delete by job without touching other repos' data.
+    Embeds and persists chunks into the shared Chroma collection.
+    Before adding, deletes any existing chunks tagged with the same
+    repo_id — this makes re-ingestion an upsert instead of a duplicate
+    append. job_id is kept only for traceability of which run produced
+    a given chunk (useful for debugging failed/retried jobs).
     """
     if not docs:
         return 0
 
+    store = get_vectorstore()
+
+    existing = store.get(where={"repo_id": repo_id})
+    existing_ids = existing.get("ids", [])
+    if existing_ids:
+        store.delete(ids=existing_ids)
+
     for doc in docs:
+        doc.metadata["repo_id"] = repo_id
         doc.metadata["job_id"] = job_id
 
-    store = get_vectorstore()
     store.add_documents(docs)
     return len(docs)
-
 
 def search(query: str, k: int = 5, doc_type: str | None = None) -> list[Document]:
     """
