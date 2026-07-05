@@ -1,11 +1,10 @@
-# .github/workflows/ci.yml
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, webapp]
   pull_request:
-    branches: [main]
+    branches: [main, webapp]
 
 jobs:
   test:
@@ -14,6 +13,10 @@ jobs:
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+
+    defaults:
+      run:
+        working-directory: backend
 
     steps:
       - name: Checkout code
@@ -30,4 +33,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
-        run: python -m pytest tests/ -v
+        run: pytest tests/ -v
