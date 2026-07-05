@@ -5,6 +5,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.agent.tools import search_codebase, get_file, list_good_first_issues
 from app.core.config import settings
 
+import time
+from google.api_core.exceptions import ResourceExhausted
+
 # InMemorySaver keeps conversation history in this process's memory only --
 # fine for a single-instance dev/demo deployment, but history is lost on
 # restart and isn't shared across multiple worker processes. Worth a
@@ -19,7 +22,7 @@ _checkpointer = InMemorySaver()
 # see it. Passing api_key= explicitly keeps this consistent with how the
 # rest of the app (DB, JWT secret) sources config from Settings.
 _model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model=settings.google_model_name,
     api_key=settings.google_api_key,
 )
 
@@ -39,7 +42,7 @@ def get_agent():
     return _agent
 
 
-def chat(message: str, thread_id: str) -> str:
+def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
     """
     Runs one turn of conversation against the agent, scoped to thread_id.
     Returns plain text, extracting it from the typed content blocks
@@ -49,10 +52,17 @@ def chat(message: str, thread_id: str) -> str:
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
 
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": message}]},
-        config=config,
-    )
+    for attempt in range(max_retries + 1):
+        try:
+            result = agent.invoke(
+                {"messages": [{"role": "user", "content": message}]},
+                config=config,
+            )
+            break
+        except ResourceExhausted:
+            if attempt == max_retries:
+                return "The AI provider's free-tier quota is temporarily exhausted. Please try again shortly."
+            time.sleep(5 * (attempt + 1))  # brief backoff, not a full exponential scheme -- fine at this scale
 
     final_message = result["messages"][-1]
     content = final_message.content
