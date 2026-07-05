@@ -1,3 +1,4 @@
+import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
@@ -9,15 +10,20 @@ COLLECTION_NAME = "reposage"
 
 def get_vectorstore() -> Chroma:
     """
-    Returns a Chroma vectorstore instance backed by the configured
-    embedding function and persisted to disk. Called both when writing
-    (ingestion) and reading (agent tool queries), so it's the single
-    source of truth for how we talk to Chroma.
+    Connects to a standalone Chroma server over the network, rather than
+    opening an embedded, file-based client directly. The API and worker
+    are separate processes that both need to read/write vector data --
+    Chroma's embedded client isn't safe for multiple processes to open
+    the same on-disk files concurrently, which is what caused the
+    intermittent "Error finding id" corruption. Routing both processes
+    through one Chroma server process, which alone owns the actual
+    files, fixes that at the source rather than papering over it.
     """
+    client = chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
     return Chroma(
+        client=client,
         collection_name=COLLECTION_NAME,
         embedding_function=get_embedding_function(),
-        persist_directory=settings.chroma_persist_dir,
     )
 
 

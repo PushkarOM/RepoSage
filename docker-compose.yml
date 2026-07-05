@@ -4,6 +4,11 @@ services:
     ports:
       - "6379:6379"
 
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma_data:/chroma/chroma
+
   api:
     build: ./backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -13,7 +18,8 @@ services:
       - ./backend/.env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
       - CLONE_DIR=/app/data/cloned_repos
       - DATABASE_URL=sqlite:////app/data/reposage.db
       - HF_HOME=/app/data/hf_cache
@@ -21,6 +27,7 @@ services:
       - reposage_data:/app/data
     depends_on:
       - redis
+      - chroma
 
   worker:
     build: ./backend
@@ -29,7 +36,8 @@ services:
       - ./backend/.env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
       - CLONE_DIR=/app/data/cloned_repos
       - DATABASE_URL=sqlite:////app/data/reposage.db
       - HF_HOME=/app/data/hf_cache
@@ -37,6 +45,15 @@ services:
       - reposage_data:/app/data
     depends_on:
       - redis
+      - chroma
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
 
 volumes:
   reposage_data:
+  chroma_data:

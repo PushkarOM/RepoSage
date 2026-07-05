@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
     google_model_name: str = "gemini-2.5-flash-lite"
     chroma_persist_dir: str = "./chroma_db"
+    chroma_host: str = "chroma"
+    chroma_port: int = 8000
     clone_dir: str = "./cloned_repos"
 
     jwt_secret_key: str = "dev-secret-change-me"
