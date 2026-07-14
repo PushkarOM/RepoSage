@@ -5,7 +5,6 @@ class Settings(BaseSettings):
     embedding_model_local: str = "sentence-transformers/all-MiniLM-L6-v2"
     google_api_key: str | None = None
     google_model_name: str = "gemini-2.5-flash-lite"
-    chroma_persist_dir: str = "./chroma_db"
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     clone_dir: str = "./cloned_repos"
