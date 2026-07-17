@@ -1,6 +1,6 @@
 services:
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     ports:
       - "6379:6379"
 
@@ -46,11 +46,9 @@ services:
       - chroma
 
   frontend:
-    image: nginx:alpine
+    build: ./frontend
     ports:
       - "80:80"
-    volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
 
 volumes:
   reposage_data:

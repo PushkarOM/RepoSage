@@ -1,6 +1,6 @@
 from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.redis import RedisSaver
 
 from app.agent.tools import search_codebase, get_file, list_good_first_issues
 from app.core.config import settings
@@ -8,12 +8,11 @@ from app.core.config import settings
 import time
 from google.api_core.exceptions import ResourceExhausted
 
-# InMemorySaver keeps conversation history in this process's memory only --
-# fine for a single-instance dev/demo deployment, but history is lost on
-# restart and isn't shared across multiple worker processes. Worth a
-# README note as a known limitation; a persistent checkpointer (e.g.
-# backed by Redis or Postgres) would be the production fix.
-_checkpointer = InMemorySaver()
+# Redis-backed checkpointer used to persist conversation state across
+# application restarts and multiple worker processes. Call `setup()` once
+# during initialization to ensure the required Redis structures are ready.
+_checkpointer = RedisSaver(settings.redis_url)
+_checkpointer.setup()
 
 # Explicit model instantiation, not the "google_genai:model-name" string
 # shorthand. The shorthand relies on os.environ["GOOGLE_API_KEY"] being
