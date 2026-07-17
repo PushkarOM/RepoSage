@@ -9,6 +9,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis/redis-stack-server:latest
+        ports:
+          - 6379:6379
 
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
