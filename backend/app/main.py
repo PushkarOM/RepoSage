@@ -5,8 +5,6 @@ from app.models import user
 from app.api.routes import router
 from app.api.auth import router as auth_router
 
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="RepoSage")
 
 app.add_middleware(
