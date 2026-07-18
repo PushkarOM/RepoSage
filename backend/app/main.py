@@ -1,11 +1,20 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.database import Base, engine
-from app.models import user  
+from app.models import user  # noqa: F401
 from app.api.routes import router
 from app.api.auth import router as auth_router
+from app.agent.agent import init_agent, close_agent
 
-app = FastAPI(title="RepoSage")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_agent()
+    yield
+    await close_agent()
+
+
+app = FastAPI(title="RepoSage", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,7 +22,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.include_router(auth_router)
 app.include_router(router)

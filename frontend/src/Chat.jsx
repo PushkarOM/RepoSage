@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { sendChat } from "./api";
+import { streamChat } from "./api";
 
 function Chat({ token, jobId }) {
   const [messages, setMessages] = useState([]);
@@ -17,14 +17,22 @@ function Chat({ token, jobId }) {
     const text = input.trim();
     if (!text || sending) return;
 
-    setMessages((prev) => [...prev, { who: "you", text }]);
+    setMessages((prev) => [...prev, { who: "you", text }, { who: "agent", text: "" }]);
     setInput("");
     setSending(true);
     setError("");
 
     try {
-      const result = await sendChat(token, jobId, text);
-      setMessages((prev) => [...prev, { who: "agent", text: result.reply }]);
+      await streamChat(token, jobId, text, (chunk) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            text: updated[updated.length - 1].text + chunk,
+          };
+          return updated;
+        });
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -58,12 +66,6 @@ function Chat({ token, jobId }) {
               <p className="text-sm text-(--color-bone) leading-relaxed">{m.text}</p>
             </div>
           ))}
-          {sending && (
-            <div className="flex gap-2">
-              <span className="font-mono-ui text-sm text-(--color-diff-add)">$</span>
-              <p className="font-mono-ui text-sm text-(--color-steel) animate-pulse">thinking...</p>
-            </div>
-          )}
           <div ref={logEndRef} />
         </div>
 

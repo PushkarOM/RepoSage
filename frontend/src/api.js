@@ -55,3 +55,28 @@ export async function sendChat(token, jobId, message) {
   });
   return handleResponse(response);
 }
+
+export async function streamChat(token, jobId, message, onChunk) {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ job_id: jobId, message }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.detail || `Request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onChunk(decoder.decode(value, { stream: true }));
+  }
+}
