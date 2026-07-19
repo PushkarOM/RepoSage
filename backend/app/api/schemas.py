@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-
+from datetime import datetime
 
 class IngestRequest(BaseModel):
     github_url: str
@@ -24,3 +24,14 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     thread_id: str
     reply: str
+
+class RepoListResponse(BaseModel):
+    id: int
+    github_url: str
+    repo_id: str
+    job_id: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True 

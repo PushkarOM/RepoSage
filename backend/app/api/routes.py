@@ -1,30 +1,65 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from celery.result import AsyncResult
+from sqlalchemy.orm import Session
 
+from app.core.database import get_db
 from app.core.celery_app import celery_app
+
 from app.ingestion.tasks import ingest_repo_task
-from app.api.schemas import IngestRequest, IngestResponse, StatusResponse
-from app.api.auth import get_current_user
+from app.ingestion.utils import derive_repo_id
+
+from app.models.ingested_repo import IngestedRepo
+from app.models.user import User
 
 from app.agent.agent import chat as agent_chat
 from app.agent.agent import chat_stream as agent_chat_stream
-from app.api.schemas import ChatRequest, ChatResponse
+
+from app.api.auth import get_current_user
+from app.api.schemas import IngestRequest, IngestResponse, StatusResponse, RepoListResponse, ChatRequest, ChatResponse
+
 
 router = APIRouter()
 
 
 @router.post("/ingest", response_model=IngestResponse)
-def ingest(request: IngestRequest, current_user: str = Depends(get_current_user)):
+def ingest(
+    request: IngestRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Kicks off ingestion as a background Celery task and returns
-    immediately with a job_id. Client polls /status/{job_id} to
-    track progress instead of blocking on a slow clone+embed job
-    inside an HTTP request.
+    immediately with a job_id, and records a row so the user can see
+    this repo in their dashboard and resume chatting with it later
+    without re-ingesting.
     """
     task = ingest_repo_task.delay(request.github_url)
+
+    user = db.query(User).filter(User.username == current_user).first()
+    repo_row = IngestedRepo(
+        user_id=user.id,
+        github_url=request.github_url,
+        repo_id=derive_repo_id(request.github_url),
+        job_id=task.id,
+        status="queued",
+    )
+    db.add(repo_row)
+    db.commit()
+
     return IngestResponse(job_id=task.id, status="queued")
 
+
+@router.get("/repos", response_model=list[RepoListResponse])
+def list_repos(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == current_user).first()
+    repos = (
+        db.query(IngestedRepo)
+        .filter(IngestedRepo.user_id == user.id)
+        .order_by(IngestedRepo.created_at.desc())
+        .all()
+    )
+    return repos
 
 @router.get("/status/{job_id}", response_model=StatusResponse)
 def get_status(job_id: str, current_user: str = Depends(get_current_user)):
