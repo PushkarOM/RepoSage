@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { startIngest, getStatus } from "./api";
+import { startIngest, getStatus } from "../lib/api";
 
 const STATE_COLOR = {
   queued: "bg-(--color-steel)",

@@ -80,3 +80,10 @@ export async function streamChat(token, jobId, message, onChunk) {
     onChunk(decoder.decode(value, { stream: true }));
   }
 }
+
+export async function listRepos(token) {
+  const response = await fetch(`${API_BASE}/repos`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return handleResponse(response);
+}

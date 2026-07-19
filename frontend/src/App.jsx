@@ -1,15 +1,19 @@
 import { useState } from "react";
-import Auth from "./Auth";
-import Ingest from "./Ingest";
-import Chat from "./Chat";
+
+import Auth from "./pages/Auth";
+import Dashboard from "./pages/Dashboard";
+import Ingest from "./pages/Ingest";
+import Chat from "./pages/Chat";
 
 function App() {
   const [token, setToken] = useState(null);
   const [jobId, setJobId] = useState(null);
+  const [view, setView] = useState("dashboard"); // "dashboard" | "ingest" | "chat"
 
   function handleLogout() {
     setToken(null);
     setJobId(null);
+    setView("dashboard");
   }
 
   if (!token) {
@@ -25,11 +29,17 @@ function App() {
         $ logout
       </button>
 
-      {!jobId ? (
-        <Ingest token={token} onIngestComplete={setJobId} />
-      ) : (
-        <Chat token={token} jobId={jobId} />
+      {view === "dashboard" && (
+        <Dashboard
+          token={token}
+          onSelectRepo={(id) => { setJobId(id); setView("chat"); }}
+          onNewIngest={() => setView("ingest")}
+        />
       )}
+      {view === "ingest" && (
+        <Ingest token={token} onIngestComplete={(id) => { setJobId(id); setView("chat"); }} />
+      )}
+      {view === "chat" && <Chat token={token} jobId={jobId} />}
     </div>
   );
 }

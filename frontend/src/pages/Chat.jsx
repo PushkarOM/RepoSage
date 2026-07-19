@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { streamChat } from "./api";
+import { streamChat } from "../lib/api"; 
 
 function Chat({ token, jobId }) {
   const [messages, setMessages] = useState([]);
