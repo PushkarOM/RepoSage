@@ -1,4 +1,8 @@
 import { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+
 import { streamChat } from "../lib/api"; 
 
 function Chat({ token, jobId }) {
@@ -63,7 +67,31 @@ function Chat({ token, jobId }) {
               >
                 {m.who === "you" ? ">" : "$"}
               </span>
-              <p className="text-sm text-(--color-bone) leading-relaxed">{m.text}</p>
+             <div className="text-sm text-(--color-bone) leading-relaxed prose-chat">
+              <ReactMarkdown
+                components={{
+                  code({ inline, className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || "");
+                    return !inline && match ? (
+                      <SyntaxHighlighter
+                        style={vscDarkPlus}
+                        language={match[1]}
+                        PreTag="div"
+                        customStyle={{ borderRadius: "8px", fontSize: "13px", margin: "8px 0" }}
+                      >
+                        {String(children).replace(/\n$/, "")}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <code className="bg-white/10 px-1.5 py-0.5 rounded text-(--color-amber) text-xs" {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              >
+                {m.text}
+              </ReactMarkdown>
+            </div>
             </div>
           ))}
           <div ref={logEndRef} />

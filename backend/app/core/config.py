@@ -3,8 +3,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     embedding_provider: str = "local"
     embedding_model_local: str = "sentence-transformers/all-MiniLM-L6-v2"
+    
+    
+    llm_provider: str = "groq"  # "groq" or "gemini"
+
     google_api_key: str | None = None
     google_model_name: str = "gemini-2.5-flash-lite"
+    
+    groq_api_key: str | None = None
+    groq_model_name: str = "llama-3.3-70b-versatile"
+
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     clone_dir: str = "./cloned_repos"

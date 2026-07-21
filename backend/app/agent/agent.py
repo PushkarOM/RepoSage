@@ -2,7 +2,6 @@ import asyncio
 from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-from google.api_core.exceptions import ResourceExhausted
 
 from app.agent.tools import search_codebase, get_file, list_good_first_issues
 from app.core.config import settings
@@ -15,6 +14,39 @@ _model = ChatGoogleGenerativeAI(
 _checkpointer_cm = None
 _agent = None
 
+
+
+SYSTEM_PROMPT = """You are RepoSage, an assistant that helps users understand a GitHub repository.
+
+Tool selection:
+- Use get_file when the user asks to explain, review, walk through, or see the code of a
+  specific named file. It returns the full file content, giving you enough context for a
+  real, detailed explanation -- not just a fragment.
+- Use search_codebase to locate relevant code across the repo, or for broader conceptual
+  questions where you don't know the exact file up front.
+- You can chain them: search_codebase to find the right file, then get_file to read it in
+  full before answering.
+
+When explaining code:
+- Go beyond a one-paragraph summary -- walk through the actual logic: what each function
+  does, key control flow, notable design choices.
+- When asked to cite, show, or quote code, include real excerpts in fenced code blocks
+  (```python ... ```), not just a prose description.
+- Cite file paths in backticks when referencing them, but don't repeat "as seen in X file"
+  after every sentence. Cite naturally, once per relevant claim.
+
+You have full access to this conversation's history in your context. Never claim you can't
+recall earlier turns -- answer directly from the conversation above you."""
+
+
+def _get_model():
+    if settings.llm_provider == "groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(model=settings.groq_model_name, api_key=settings.groq_api_key)
+    else:
+        return ChatGoogleGenerativeAI(model=settings.google_model_name, api_key=settings.google_api_key)
+
+_model = _get_model()
 
 async def init_agent():
     """
@@ -33,6 +65,7 @@ async def init_agent():
         model=_model,
         tools=[search_codebase, get_file, list_good_first_issues],
         checkpointer=checkpointer,
+        system_prompt=SYSTEM_PROMPT,
     )
 
 
@@ -58,8 +91,9 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
                 config=config,
             )
             break
-        except ResourceExhausted:
-            if attempt == max_retries:
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "rate limit" in error_str or "quota" in error_str or "resource_exhausted" in error_str:
                 return "The AI provider's free-tier quota is temporarily exhausted. Please try again shortly."
             await asyncio.sleep(5 * (attempt + 1))
 
@@ -93,5 +127,9 @@ async def chat_stream(message: str, thread_id: str):
                         text = block.get("text", "")
                         if text:
                             yield text
-    except ResourceExhausted:
-        yield "\n\n[The AI provider's free-tier quota is temporarily exhausted. Please try again shortly.]"
+    except Exception as e:
+        error_str = str(e).lower()
+        if "429" in error_str or "rate limit" in error_str or "quota" in error_str or "resource_exhausted" in error_str:
+            # streaming version:
+            yield "\n\n[The AI provider's rate limit was hit. Please try again shortly.]"
+
