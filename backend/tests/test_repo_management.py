@@ -1,3 +1,5 @@
+from app.models.ingested_repo import IngestedRepo
+
 def test_reingest_requires_auth(client):
     response = client.post("/repos/reingest", json={"repo_id": "owner/repo"})
     assert response.status_code == 401
@@ -18,13 +20,17 @@ def test_thread_messages_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_ingest_upserts_not_duplicates(client, monkeypatch):
+def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
     """
     Regression test for the job_id/repo_id collision bug found this
-    session: re-ingesting the same repo must update the existing
-    ingested_repos row, not create a second one. A duplicate would mean
-    the dashboard shows the repo twice and/or violates the unique
-    constraint on (user_id, repo_id) outright.
+    session: re-ingesting an already-completed repo must update the
+    existing ingested_repos row, not create a second one.
+
+    Ingesting a repo that's still mid-run correctly returns 409 (a
+    separate, deliberate guard against duplicate concurrent ingestion) --
+    so this test simulates the first run finishing before triggering a
+    second ingestion, since no real Celery worker runs in tests to do
+    that naturally.
     """
     client.post("/register", json={"username": "dana", "password": "testpass123"})
     login_resp = client.post("/login", data={"username": "dana", "password": "testpass123"})
@@ -42,12 +48,17 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch):
 
     url = "https://github.com/owner/repo.git"
     r1 = client.post("/ingest", json={"github_url": url}, headers=headers)
-    r2 = client.post("/ingest", json={"github_url": url}, headers=headers)
-
     assert r1.status_code == 200
+
+    # No real worker runs in tests -- simulate the first ingestion completing
+    repo_row = db_session.query(IngestedRepo).filter(IngestedRepo.repo_id == r1.json()["repo_id"]).first()
+    repo_row.status = "success"
+    db_session.commit()
+
+    r2 = client.post("/ingest", json={"github_url": url}, headers=headers)
     assert r2.status_code == 200
     assert r1.json()["repo_id"] == r2.json()["repo_id"]
 
     repos_resp = client.get("/repos", headers=headers)
     matching = [r for r in repos_resp.json() if r["repo_id"] == r1.json()["repo_id"]]
-    assert len(matching) == 1  # exactly one row, not two
+    assert len(matching) == 1
