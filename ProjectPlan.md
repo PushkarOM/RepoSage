@@ -27,7 +27,7 @@ scope decisions below reflect that explicitly.
 - [x] "Your repos" dashboard — list previously ingested repos per user, resume chat without re-ingesting
 - [x] Syntax-highlighted code blocks in chat responses (react-markdown + react-syntax-highlighter)
 - [x] Citations in answers — via system_prompt instructing the agent to cite file paths inline
-- [ ] LLM provider switch: Groq (faster, much higher free daily quota than Gemini) — in progress
+- [x] LLM provider switch: Groq (faster, much higher free daily quota than Gemini)
 
 ## Phase 2.5 — Repo identity & multi-conversation support (added mid-build, not in original plan)
 
@@ -36,12 +36,12 @@ for both retrieval scoping (search_codebase/get_file) and chat threads, but inge
 already keys on repo_id. Re-ingesting would silently orphan any chat thread still pointing at
 the old job_id. Fix is architectural, not a patch:
 
-- [ ] Switch search_codebase/get_file/clone directory to key off repo_id instead of job_id
-- [ ] ingested_repos becomes one row per repo (upsert on reingest), not one row per run
-- [ ] `POST /repos/{repo_id}/reingest` endpoint
-- [ ] New `chat_threads` table (repo_id, user_id, thread_id, title, timestamps)
-- [ ] Endpoints to list/create chat threads for a repo
-- [ ] Frontend: reingest button per repo; clicking a repo shows a thread list + "new chat", not one fixed conversation
+- [x] Switch search_codebase/get_file/clone directory to key off repo_id instead of job_id
+- [x] ingested_repos becomes one row per repo (upsert on reingest), not one row per run
+- [x] `POST /repos/{repo_id}/reingest` endpoint
+- [x] New `chat_threads` table (repo_id, user_id, thread_id, title, timestamps)
+- [x] Endpoints to list/create chat threads for a repo
+- [x] Frontend: reingest button per repo; clicking a repo shows a thread list + "new chat", not one fixed conversation
 
 ## Phase 3 — Security / multi-tenancy
 
@@ -76,3 +76,61 @@ Deliberately deferred until the feature surface stops changing shape:
 | Vector DB hosting | Self-hosted Chroma (Docker service) | Already working, already debugged a real concurrency bug in it; abstracted behind `get_vectorstore()` for an easy future swap |
 | Agent memory | Redis (`AsyncRedisSaver`, Redis Stack) | Survives restarts, shareable across replicas; async variant required once true token streaming was added |
 | LLM provider | Groq (switching from Gemini) | Gemini free tier daily quota (as low as 20/day) kept blocking development; Groq offers far higher limits and faster inference |
+
+## Session log — everything completed since last update
+
+**Phase 2 — fully done**, including items beyond original scope:
+- Streaming, dashboard, syntax highlighting, citations (all previously done)
+- Switched LLM provider: Gemini → Groq (Llama 3.3 70B) — far higher free daily quota, faster inference
+- System prompt tuning: fixed tool selection (get_file for "explain this file" vs search_codebase for broad queries), fixed shallow answers, fixed "I can't recall past turns" disclaimer, fixed over-repetitive citation phrasing
+
+**Phase 2.5 — fully done**:
+- Foundational fix: switched search_codebase/get_file/clone directory from job_id-scoped to repo_id-scoped (job_id is now purely "one ingestion run's ID," repo_id is the stable identity everything else keys off)
+- ingested_repos is now one row per repo (upsert on reingest) with a unique constraint on (user_id, repo_id), not one row per run
+- Reingest endpoint + button, with backend guard (409 if already queued) preventing duplicate concurrent ingestion of the same repo
+- chat_threads table — multiple separate conversations per repo now supported, each with its own Redis-backed memory
+- Auto-generated chat titles (short LLM summary of the first message) + manual rename with explicit save/cancel
+
+**Performance/infra fixes found along the way**:
+- Embedding model singleton (was reloading sentence-transformers weights on every search_codebase call)
+- Startup warm-up: FastAPI lifespan + Celery worker_process_init both preload the embedding model before accepting traffic, so the first real request isn't the slow one
+- dev-only docker-compose.dev.yml (bind mount + --reload) for fast local iteration without full rebuilds, kept deliberately separate from what EC2 runs
+
+**Frontend UX fixes**:
+- Real React Router navigation (was a hand-rolled state machine with no real URLs) — browser back/forward and reload now work correctly
+- JWT persisted in localStorage via AuthContext (reload no longer forces re-login) — noted as a deliberate portfolio-scale tradeoff vs. httpOnly cookies (documented as a known limitation)
+- Loading/busy states for reingest and "new chat" (previously: buttons stayed clickable mid-operation, silent hangs with no feedback)
+- Reorganized frontend into pages/ + lib/, removed dead Vite scaffold assets
+
+**New parked observation for Phase 4**:
+- Vague queries ("what is this repo about") retrieve poorly via pure vector similarity; specific queries ("check the readme file") work -- concrete case for hybrid search (BM25 + vector), already on the Phase 4 list
+
+## Next session — pick up here
+
+- Phase 3: rate limiting/quotas, then private repo support via GitHub OAuth
+- Phase 4: hybrid search, more tools, eval harness (using the two parked RAG observations as concrete test cases)
+- Phase 5: multi-stage frontend Dockerfile, Render migration, auto-deploy on merge
+- Final pass: UI/UX overhaul + animation library, button component consolidation, streaming polish
+
+## Session log, continued
+
+**More fixes found through real testing (not hypothetical edge cases):**
+- nginx serving the SPA build had no fallback route -- reloading on any non-root path (e.g. deep in a chat thread) 404'd. Fixed with `try_files $uri /index.html` in a proper `nginx.conf`.
+- No real client-side routing existed at all -- App.jsx was a hand-rolled state switch, so the browser URL never changed and back/forward/reload were all broken. Replaced with React Router; JWT persisted in localStorage via AuthContext (documented as a known tradeoff vs. httpOnly cookies).
+- 401s (expired/invalid token) failed silently instead of redirecting to login -- added a shared `authFetch` wrapper in api.js that hard-redirects on 401, applied to every authenticated call.
+- Login had no loading state, masking Neon's cold-start latency as a dead, unresponsive button.
+- Redis had no persistent volume -- chat memory didn't survive `docker compose down` (not just `-v`). Fixed by mounting a named volume at `/data`.
+- Separately, and more fundamentally: the frontend never fetched prior messages on mount at all -- Chat.jsx started from an empty array every time, regardless of whether Redis had real history. Added GET /threads/{thread_id}/messages (via LangGraph's `aget_state`) + load-on-mount in Chat.jsx.
+- The repo_id context prefix injected into every message for the agent's benefit was leaking into displayed history text (visible only on reload, since the optimistic first render was clean) -- stripped via regex in the display layer only, agent still receives the full prefixed text.
+- docker-compose.dev.yml added (bind mount + --reload) for fast local iteration without full rebuilds, deliberately kept separate from what EC2 runs.
+
+**Phase 2: fully closed.** Streaming, dashboard, syntax highlighting, citations, Groq migration,
+multi-thread chat, chat history persistence/restoration, and real navigation are all confirmed
+working through actual testing, including several real bugs caught by hands-on use rather than
+theoretical review.
+
+## Next up: Phase 3
+
+- Per-user rate limiting / usage quotas
+- Private repo support via GitHub OAuth
+- 

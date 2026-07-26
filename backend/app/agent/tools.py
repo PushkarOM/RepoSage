@@ -6,52 +6,38 @@ import httpx
 
 
 @tool
-def search_codebase(job_id: str, query: str, doc_type: str | None = None) -> str:
+def search_codebase(repo_id: str, query: str, doc_type: str | None = None) -> str:
     """Search the ingested repository for code or documentation relevant
-    to the query. Always use the job_id given in your context -- never
-    guess or reuse a job_id from a different conversation.
+    to the query. Always use the repo_id given in your context.
 
     Args:
-        job_id: The ingestion job ID identifying which repo to search.
-        query: What to search for, e.g. "how does authentication work".
-        doc_type: Optional filter, either "code" or "doc". Leave unset
-            to search both.
+        repo_id: Identifies which repo to search (e.g. "owner/name").
+        query: What to search for.
+        doc_type: Optional filter, "code" or "doc".
     """
-    results = search(query, k=5, doc_type=doc_type, job_id=job_id)
-
+    results = search(query, k=5, doc_type=doc_type, repo_id=repo_id)
     if not results:
         return "No relevant results found in the ingested repository."
-
-    formatted = []
-    for r in results:
-        source = r.metadata.get("source", "unknown")
-        formatted.append(f"[{source}]\n{r.page_content}")
-
+    formatted = [f"[{r.metadata.get('source', 'unknown')}]\n{r.page_content}" for r in results]
     return "\n\n---\n\n".join(formatted)
 
+
 @tool
-def get_file(job_id: str, path: str) -> str:
+def get_file(repo_id: str, path: str) -> str:
     """Retrieve the full contents of a specific file from the ingested
-    repository. Use this when search_codebase returns a relevant chunk
-    but you need to see the complete file for full context.
+    repository.
 
     Args:
-        job_id: The ingestion job ID for the repo (identifies which
-            cloned repo directory to read from).
-        path: The relative file path within the repo, e.g. "src/main.py".
+        repo_id: Identifies which repo's clone directory to read from.
+        path: The relative file path within the repo.
     """
-    repo_dir = Path(settings.clone_dir) / job_id
+    repo_dir = Path(settings.clone_dir) / repo_id
     file_path = (repo_dir / path).resolve()
 
-    # Prevent path traversal outside the cloned repo directory --
-    # without this check, a malicious or malformed path like
-    # "../../etc/passwd" could escape clone_dir entirely.
     if not str(file_path).startswith(str(repo_dir.resolve())):
         return "Error: path is outside the repository directory."
-
     if not file_path.is_file():
         return f"Error: {path} not found in repository."
-
     try:
         return file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:

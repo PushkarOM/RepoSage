@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { startIngest, getStatus } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const STATE_COLOR = {
   queued: "bg-(--color-steel)",
@@ -9,7 +11,10 @@ const STATE_COLOR = {
   FAILURE: "bg-(--color-diff-remove)",
 };
 
-function Ingest({ token, onIngestComplete }) {
+function Ingest() {
+  const { token } = useAuth();
+  const navigate = useNavigate();
+  
   const [githubUrl, setGithubUrl] = useState("");
   const [jobId, setJobId] = useState(null);
   const [state, setState] = useState("");
@@ -33,23 +38,23 @@ function Ingest({ token, onIngestComplete }) {
       const result = await startIngest(token, githubUrl);
       setJobId(result.job_id);
       logState("queued");
-      poll(result.job_id);
+      poll(result.job_id, result.repo_id);
     } catch (err) {
       setError(err.message);
     }
   }
 
-  async function poll(id) {
+  async function poll(id, repoId) {
     try {
       const result = await getStatus(token, id);
       logState(result.state);
 
       if (result.state === "SUCCESS") {
-        onIngestComplete(id);
+        navigate(`/repos/${repoId}/threads`);
       } else if (result.state === "FAILURE") {
         setError("Ingestion failed. Check the repo URL and try again.");
       } else {
-        pollTimeoutRef.current = setTimeout(() => poll(id), 2000);
+        pollTimeoutRef.current = setTimeout(() => poll(id, repoId), 2000);
       }
     } catch (err) {
       setError(err.message);

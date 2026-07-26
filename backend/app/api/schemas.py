@@ -7,8 +7,8 @@ class IngestRequest(BaseModel):
 
 class IngestResponse(BaseModel):
     job_id: str
+    repo_id: str
     status: str
-
 
 class StatusResponse(BaseModel):
     job_id: str
@@ -16,7 +16,7 @@ class StatusResponse(BaseModel):
     result: dict | None = None
 
 class ChatRequest(BaseModel):
-    job_id: str
+    repo_id: str
     message: str
     thread_id: str | None = None
 
@@ -35,3 +35,26 @@ class RepoListResponse(BaseModel):
 
     class Config:
         from_attributes = True 
+
+class ReingestRequest(BaseModel):
+    repo_id: str
+
+class ThreadResponse(BaseModel):
+    id: int
+    thread_id: str
+    title: str
+    created_at: datetime
+    last_message_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CreateThreadRequest(BaseModel):
+    repo_id: str
+
+class AutoTitleRequest(BaseModel):
+    message: str
+
+class RenameThreadRequest(BaseModel):
+    title: str

@@ -1,17 +1,26 @@
 from app.core.config import settings
 
+_embedding_function = None
+
 
 def get_embedding_function():
     """
-    Returns a LangChain-compatible embedding function based on
-    settings.embedding_provider. Keeping this as a single switch point
-    means the rest of the app (ingestion, agent tools) never needs to
-    know which backend is active.
+    Cached at module level -- loading sentence-transformers weights is
+    expensive (real disk I/O + model init), not something to repeat on
+    every search_codebase call. Each process (api, worker) gets its own
+    singleton, since it's an in-process ML model, not a shared service --
+    that's a different concern from Chroma, which we already made a
+    shared service specifically for the data itself.
     """
+    global _embedding_function
+    if _embedding_function is not None:
+        return _embedding_function
+
     if settings.embedding_provider == "openai":
         from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(api_key=settings.openai_api_key)
+        _embedding_function = OpenAIEmbeddings(api_key=settings.openai_api_key)
+    else:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        _embedding_function = HuggingFaceEmbeddings(model_name=settings.embedding_model_local)
 
-    # default: local, free, no API key required
-    from langchain_huggingface import HuggingFaceEmbeddings
-    return HuggingFaceEmbeddings(model_name=settings.embedding_model_local)
+    return _embedding_function

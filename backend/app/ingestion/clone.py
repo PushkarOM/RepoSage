@@ -18,16 +18,19 @@ def _remove_readonly(func, path, exc_info):
     func(path)
 
 
-def clone_repo(github_url: str, job_id: str) -> Path:
+def clone_repo(github_url: str, repo_id: str) -> Path:
     """
-    Clones a GitHub repo to a job-specific local directory.
-    job_id-scoped path avoids collisions between concurrent
-    ingestion jobs once this runs as a Celery task.
+    Clones into a repo_id-scoped directory (e.g. "owner/name"), not a
+    job_id-scoped one. This is deliberate: repo_id is stable across
+    re-ingestions of the same repo, so re-running ingestion naturally
+    overwrites the same directory instead of accumulating a new one
+    per run -- this is also what makes a future "reingest" feature safe.
     """
-    dest = Path(settings.clone_dir) / job_id
+    dest = Path(settings.clone_dir) / repo_id
     if dest.exists():
         shutil.rmtree(dest, onerror=_remove_readonly)
     dest.mkdir(parents=True, exist_ok=True)
 
-    Repo.clone_from(github_url, dest, depth=1)  # shallow: don't need full history
+    Repo.clone_from(github_url, dest, depth=1)
     return dest
+

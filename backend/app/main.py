@@ -9,6 +9,9 @@ from app.agent.agent import init_agent, close_agent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.core.embeddings import get_embedding_function
+    get_embedding_function()  
+
     await init_agent()
     yield
     await close_agent()

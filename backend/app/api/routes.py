@@ -1,7 +1,12 @@
+import uuid
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from celery.result import AsyncResult
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from app.models.chat_threads import ChatThread
 
 from app.core.database import get_db
 from app.core.celery_app import celery_app
@@ -14,10 +19,10 @@ from app.models.user import User
 
 from app.agent.agent import chat as agent_chat
 from app.agent.agent import chat_stream as agent_chat_stream
+from app.agent.agent import generate_title, get_history as agent_get_history
 
 from app.api.auth import get_current_user
-from app.api.schemas import IngestRequest, IngestResponse, StatusResponse, RepoListResponse, ChatRequest, ChatResponse
-
+from app.api.schemas import IngestRequest, IngestResponse, StatusResponse, RepoListResponse, ChatRequest, ChatResponse, ReingestRequest, ThreadResponse, CreateThreadRequest, AutoTitleRequest, RenameThreadRequest
 
 router = APIRouter()
 
@@ -35,19 +40,62 @@ def ingest(
     without re-ingesting.
     """
     task = ingest_repo_task.delay(request.github_url)
-
+    repo_id = derive_repo_id(request.github_url)
     user = db.query(User).filter(User.username == current_user).first()
-    repo_row = IngestedRepo(
-        user_id=user.id,
-        github_url=request.github_url,
-        repo_id=derive_repo_id(request.github_url),
-        job_id=task.id,
-        status="queued",
+
+    existing = (
+        db.query(IngestedRepo)
+        .filter(IngestedRepo.user_id == user.id, IngestedRepo.repo_id == repo_id)
+        .first()
     )
-    db.add(repo_row)
+
+    if existing and existing.status == "queued":
+            raise HTTPException(status_code=409, detail="Ingestion already in progress for this repo")
+        
+    if existing:
+        existing.job_id = task.id
+        existing.status = "queued"
+        existing.github_url = request.github_url
+    else:
+        db.add(IngestedRepo(
+            user_id=user.id, github_url=request.github_url,
+            repo_id=repo_id, job_id=task.id, status="queued",
+        ))
+
+    db.commit()
+    return IngestResponse(job_id=task.id, repo_id=repo_id, status="queued")
+
+@router.post("/repos/reingest", response_model=IngestResponse)
+def reingest(request: ReingestRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Re-triggers ingestion for a repo already tracked for this user, reusing
+    its stored github_url. repo_id comes via the request body rather than
+    the URL path, since it contains a "/" and FastAPI's path-parameter
+    matching gets ambiguous with a :path-type param followed by more
+    segments (here, the trailing action isn't even needed -- but this
+    keeps the pattern consistent and avoids the issue entirely).
+    """
+
+    
+    user = db.query(User).filter(User.username == current_user).first()
+    existing = (
+        db.query(IngestedRepo)
+        .filter(IngestedRepo.user_id == user.id, IngestedRepo.repo_id == request.repo_id)
+        .first()
+    )
+
+    if existing and existing.status == "queued":
+            raise HTTPException(status_code=409, detail="Ingestion already in progress for this repo")
+        
+    if not existing:
+        raise HTTPException(status_code=404, detail="Repo not found")
+
+    task = ingest_repo_task.delay(existing.github_url)
+    existing.job_id = task.id
+    existing.status = "queued"
     db.commit()
 
-    return IngestResponse(job_id=task.id, status="queued")
+    return IngestResponse(job_id=task.id, repo_id=request.repo_id, status="queued")
 
 
 @router.get("/repos", response_model=list[RepoListResponse])
@@ -60,6 +108,47 @@ def list_repos(current_user: str = Depends(get_current_user), db: Session = Depe
         .all()
     )
     return repos
+
+
+@router.get("/repos/{repo_owner}/{repo_name}/threads", response_model=list[ThreadResponse])
+def list_threads(repo_owner: str, repo_name: str, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    repo_id = f"{repo_owner}/{repo_name}"
+    user = db.query(User).filter(User.username == current_user).first()
+    return (
+        db.query(ChatThread)
+        .filter(ChatThread.user_id == user.id, ChatThread.repo_id == repo_id)
+        .order_by(ChatThread.last_message_at.desc())
+        .all()
+    )
+
+
+@router.post("/threads", response_model=ThreadResponse)
+def create_thread(request: CreateThreadRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == current_user).first()
+    thread = ChatThread(user_id=user.id, repo_id=request.repo_id, thread_id=str(uuid.uuid4()))
+    db.add(thread)
+    db.commit()
+    db.refresh(thread)
+    return thread
+
+@router.post("/threads/{thread_id}/auto-title")
+async def auto_title_thread(thread_id: str, request: AutoTitleRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    thread = db.query(ChatThread).filter(ChatThread.thread_id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    thread.title = await generate_title(request.message)
+    db.commit()
+    return {"title": thread.title}
+
+
+@router.patch("/threads/{thread_id}")
+def rename_thread(thread_id: str, request: RenameThreadRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    thread = db.query(ChatThread).filter(ChatThread.thread_id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    thread.title = request.title
+    db.commit()
+    return {"title": thread.title}
 
 @router.get("/status/{job_id}", response_model=StatusResponse)
 def get_status(job_id: str, current_user: str = Depends(get_current_user)):
@@ -81,7 +170,7 @@ def get_status(job_id: str, current_user: str = Depends(get_current_user)):
     return StatusResponse(job_id=job_id, state=result.state, result=response_result)
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user)):
+async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Non-streaming chat endpoint -- waits for the full agent response,
     then returns it as one JSON payload. Kept alongside /chat/stream
@@ -97,19 +186,20 @@ async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_cu
     the moment this has more than one user.
     """
      
-    raw_thread_id = request.thread_id or request.job_id
+    raw_thread_id = request.thread_id or request.repo_id
     thread_id = f"{current_user}:{raw_thread_id}"
-
-    # Inject job_id into the message so the agent knows which repo's
-    # tools to call without the user needing to mention it every turn.
-    contextualized_message = f"[Repository job_id: {request.job_id}]\n{request.message}"
-
+    contextualized_message = f"[Repository repo_id: {request.repo_id}]\n{request.message}"
     reply = await agent_chat(contextualized_message, thread_id=thread_id)
+
+    db.query(ChatThread).filter(ChatThread.thread_id == raw_thread_id).update({"last_message_at": func.now()})
+    db.commit()
+
     return ChatResponse(thread_id=raw_thread_id, reply=reply)
 
 
+
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user)):
+async def chat_stream_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Streaming counterpart to /chat -- returns a text/plain response whose
     body is delivered incrementally as the agent generates it, rather
@@ -123,12 +213,17 @@ async def chat_stream_endpoint(request: ChatRequest, current_user: str = Depends
     endpoints drive the same underlying agent and must produce
     consistent conversation history regardless of which one is used.
     """
-    raw_thread_id = request.thread_id or request.job_id
+    raw_thread_id = request.thread_id or request.repo_id
     thread_id = f"{current_user}:{raw_thread_id}"
-    contextualized_message = f"[Repository job_id: {request.job_id}]\n{request.message}"
 
+    contextualized_message = f"[Repository repo_id: {request.repo_id}]\n{request.message}"
     return StreamingResponse(
         agent_chat_stream(contextualized_message, thread_id=thread_id),
         media_type="text/plain",
     )
+
+@router.get("/threads/{thread_id}/messages")
+async def get_thread_messages(thread_id: str, current_user: str = Depends(get_current_user)):
+    scoped_thread_id = f"{current_user}:{thread_id}"
+    return await agent_get_history(scoped_thread_id)
 

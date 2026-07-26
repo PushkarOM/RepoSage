@@ -2,21 +2,44 @@ import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
-import { streamChat } from "../lib/api"; 
+import { streamChat, autoTitleThread } from "../lib/api"; 
 
-function Chat({ token, jobId }) {
+function Chat() {
+  const { token } = useAuth();
+  const { owner, name, threadId } = useParams();
+  const repoId = `${owner}/${name}`;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isNewThread = location.state?.isNew ?? false;
+
   const [messages, setMessages] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [shouldAutoTitle, setShouldAutoTitle] = useState(isNewThread);
   const logEndRef = useRef(null);
+  
+
+  useEffect(() => {
+    setLoadingHistory(true);
+    fetch(`${import.meta.env.VITE_API_BASE}/threads/${threadId}/messages`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then(setMessages)
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingHistory(false));
+  }, [threadId]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
-  async function handleSubmit(e) {
+   async function handleSubmit(e) {
     e.preventDefault();
     const text = input.trim();
     if (!text || sending) return;
@@ -27,7 +50,7 @@ function Chat({ token, jobId }) {
     setError("");
 
     try {
-      await streamChat(token, jobId, text, (chunk) => {
+      await streamChat(token, repoId, text, threadId, (chunk) => {
         setMessages((prev) => {
           const updated = [...prev];
           updated[updated.length - 1] = {
@@ -37,6 +60,11 @@ function Chat({ token, jobId }) {
           return updated;
         });
       });
+
+      if (shouldAutoTitle) {
+        autoTitleThread(token, threadId, text).catch(() => {});
+        setShouldAutoTitle(false);   // never fire again for this thread
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,19 +72,24 @@ function Chat({ token, jobId }) {
     }
   }
 
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-(--color-ink) px-4 py-8">
+    <div className="min-h-screen bg-(--color-ink) px-4 py-8">
+      <div className="w-full max-w-2xl mx-auto">
+      <button onClick={() => navigate(`/repos/${repoId}/threads`)} className="mr-auto font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) mb-4">
+          ← back
+      </button>
       <div className="w-full max-w-2xl bg-(--color-slate) border border-white/5 rounded-lg shadow-xl flex flex-col h-[80vh]">
+        
         <div className="px-6 py-4 border-b border-white/5">
-          <p className="font-mono-ui text-xs text-(--color-amber)">$ chat --job {jobId.slice(0, 8)}</p>
+          <p className="font-mono-ui text-xs text-(--color-amber)">$ chat --Repo {repoId.slice(0, 8)}</p>
           <h1 className="font-mono-ui text-lg text-(--color-bone) mt-1">RepoSage</h1>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {messages.length === 0 && (
-            <p className="font-mono-ui text-sm text-(--color-steel)">
-              // repo ingested — ask about implementation, structure, or good-first-issues
-            </p>
+          {loadingHistory && <p className="font-mono-ui text-sm text-(--color-steel)">loading conversation...</p>}
+          {!loadingHistory && messages.length === 0 && (
+            <p className="font-mono-ui text-sm text-(--color-steel)">// repo ingested — ask about implementation, structure, or good-first-issues</p>
           )}
           {messages.map((m, i) => (
             <div key={i} className="flex gap-2">
@@ -117,6 +150,7 @@ function Chat({ token, jobId }) {
         </form>
 
         {error && <p className="px-6 pb-3 text-sm text-(--color-diff-remove)">{error}</p>}
+      </div>
       </div>
     </div>
   );

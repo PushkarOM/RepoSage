@@ -1,17 +1,24 @@
 import { useState } from "react";
-import { register, login } from "../lib/api";  
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { register, login as loginApi } from "../lib/api";
 
-function Auth({ onLogin }) {
+function Auth() {
+  
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mode, setMode] = useState("login");
 
+  const [loading, setLoading] = useState(false);
+
   async function handleSubmit(e) {
     e.preventDefault();
-    setError("");
-    setNotice("");
+    setError(""); setNotice(""); setLoading(true);
     try {
       if (mode === "register") {
         await register(username, password);
@@ -19,10 +26,13 @@ function Auth({ onLogin }) {
         setNotice("Registered — now log in.");
         return;
       }
-      const result = await login(username, password);
-      onLogin(result.access_token);
+      const result = await loginApi(username, password);
+      login(result.access_token);
+      navigate("/dashboard");
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -60,9 +70,10 @@ function Auth({ onLogin }) {
 
           <button
             type="submit"
-            className="w-full bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md py-2 hover:brightness-110 transition"
+            disabled={loading}
+            className="w-full bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md py-2 hover:brightness-110 transition disabled:opacity-50"
           >
-            {mode === "login" ? "login" : "register"}
+            {loading ? (mode === "login" ? "logging in..." : "registering...") : (mode === "login" ? "login" : "register")}
           </button>
         </form>
 

@@ -1,11 +1,25 @@
 const API_BASE = import.meta.env.VITE_API_BASE;
 
+function redirectToLogin() {
+  localStorage.removeItem("reposage_token");
+  window.location.href = "/login";
+}
+
 async function handleResponse(response) {
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
     throw new Error(errorBody.detail || `Request failed: ${response.status}`);
   }
   return response.json();
+}
+
+async function authFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  if (response.status === 401) {
+    redirectToLogin();
+    throw new Error("Session expired");
+  }
+  return response;
 }
 
 export async function register(username, password) {
@@ -26,7 +40,7 @@ export async function login(username, password) {
 }
 
 export async function startIngest(token, githubUrl) {
-  const response = await fetch(`${API_BASE}/ingest`, {
+  const response = await authFetch(`${API_BASE}/ingest`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -37,33 +51,33 @@ export async function startIngest(token, githubUrl) {
   return handleResponse(response);
 }
 
-export async function getStatus(token, jobId) {
-  const response = await fetch(`${API_BASE}/status/${jobId}`, {
+export async function getStatus(token, repoId) {
+  const response = await authFetch(`${API_BASE}/status/${repoId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return handleResponse(response);
 }
 
-export async function sendChat(token, jobId, message) {
-  const response = await fetch(`${API_BASE}/chat`, {
+export async function sendChat(token, repoId, message) {
+  const response = await authFetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ job_id: jobId, message }),
+    body: JSON.stringify({ repo_id: repoId, message }),
   });
   return handleResponse(response);
 }
 
-export async function streamChat(token, jobId, message, onChunk) {
-  const response = await fetch(`${API_BASE}/chat/stream`, {
+export async function streamChat(token, repoId, message, threadId, onChunk) {
+  const response = await authFetch(`${API_BASE}/chat/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ job_id: jobId, message }),
+    body: JSON.stringify({ repo_id: repoId, message, thread_id: threadId }),
   });
 
   if (!response.ok) {
@@ -82,8 +96,54 @@ export async function streamChat(token, jobId, message, onChunk) {
 }
 
 export async function listRepos(token) {
-  const response = await fetch(`${API_BASE}/repos`, {
+  const response = await authFetch(`${API_BASE}/repos`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return handleResponse(response);
 }
+
+export async function reingestRepo(token, repoId) {
+  const response = await authFetch(`${API_BASE}/repos/reingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ repo_id: repoId }),
+  });
+  return handleResponse(response);
+}
+
+
+export async function listThreads(token, repoId) {
+  const [owner, name] = repoId.split("/");
+  const response = await authFetch(`${API_BASE}/repos/${owner}/${name}/threads`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return handleResponse(response);
+}
+
+export async function createThread(token, repoId) {
+  const response = await authFetch(`${API_BASE}/threads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ repo_id: repoId }),
+  });
+  return handleResponse(response);
+}
+
+export async function autoTitleThread(token, threadId, message) {
+  const response = await authFetch(`${API_BASE}/threads/${threadId}/auto-title`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ message }),
+  });
+  return handleResponse(response);
+}
+
+export async function renameThread(token, threadId, title) {
+  const response = await authFetch(`${API_BASE}/threads/${threadId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ title }),
+  });
+  return handleResponse(response);
+}
+

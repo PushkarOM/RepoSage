@@ -15,8 +15,10 @@ from app.core.config import settings
 from app.core.database import Base
 
 # import so Base.metadata knows about this table
-from app.models import user  # noqa: F401
-from app.models import ingested_repo  # noqa: F401
+# noqa: F401
+from app.models import user  
+from app.models import ingested_repo  
+from app.models import chat_threads
 
 
 # this is the Alembic Config object, which provides

@@ -1,3 +1,4 @@
+import re
 import asyncio
 from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -14,7 +15,7 @@ _model = ChatGoogleGenerativeAI(
 _checkpointer_cm = None
 _agent = None
 
-
+_REPO_CONTEXT_PREFIX = re.compile(r"^\[Repository repo_id: [^\]]+\]\n")
 
 SYSTEM_PROMPT = """You are RepoSage, an assistant that helps users understand a GitHub repository.
 
@@ -110,11 +111,15 @@ async def chat_stream(message: str, thread_id: str):
     config = {"configurable": {"thread_id": thread_id}}
 
     try:
+        # print("Starting stream")
+
         async for message_chunk, metadata in agent.astream(
             {"messages": [{"role": "user", "content": message}]},
             config=config,
             stream_mode="messages",
         ):
+            # print("Received chunk")
+            # print(metadata)
             if metadata.get("langgraph_node") != "model":
                 continue
             content = message_chunk.content
@@ -133,3 +138,50 @@ async def chat_stream(message: str, thread_id: str):
             # streaming version:
             yield "\n\n[The AI provider's rate limit was hit. Please try again shortly.]"
 
+async def get_history(thread_id: str) -> list[dict]:
+    """
+    Retrieves prior messages for a thread from the checkpointer's state,
+    so the frontend can restore a conversation on mount instead of always
+    starting blank. Filters to Human/AI turns meant for display -- tool
+    call/result messages are implementation detail, not something a user
+    should see re-rendered as a chat bubble.
+    """
+    agent = get_agent()
+    config = {"configurable": {"thread_id": thread_id}}
+    state = await agent.aget_state(config)
+
+    if not state or not state.values.get("messages"):
+        return []
+
+    history = []
+    for msg in state.values["messages"]:
+        msg_type = msg.__class__.__name__
+        if msg_type == "HumanMessage" and isinstance(msg.content, str) and msg.content:
+            display_text = _REPO_CONTEXT_PREFIX.sub("", msg.content)
+            if display_text:
+                history.append({"who": "you", "text": display_text})
+        elif msg_type == "AIMessage":
+            content = msg.content
+            if isinstance(content, str) and content:
+                history.append({"who": "agent", "text": content})
+            elif isinstance(content, list):
+                text = "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                if text:
+                    history.append({"who": "agent", "text": text})
+        # ToolMessage and empty tool-call-only AIMessages are intentionally skipped
+
+    return history
+
+
+async def generate_title(message: str) -> str:
+    try:
+        response = await _model.ainvoke([
+            {"role": "system", "content": "Generate a short chat title (max 6 words, no quotes or punctuation) summarizing the user's question."},
+            {"role": "user", "content": message},
+        ])
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+        return content.strip()[:60] or "New chat"
+    except Exception:
+        return message[:40]  # fallback: just truncate rather than fail the whole flow

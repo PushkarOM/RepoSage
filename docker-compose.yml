@@ -3,6 +3,8 @@ services:
     image: redis/redis-stack-server:latest
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
 
   chroma:
     image: chromadb/chroma:latest
@@ -53,3 +55,4 @@ services:
 volumes:
   reposage_data:
   chroma_data:
+  redis_data:

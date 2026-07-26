@@ -14,7 +14,7 @@ def ingest_repo(github_url: str, job_id: str) -> dict:
     """
     repo_id = derive_repo_id(github_url)
 
-    repo_path = clone_repo(github_url, job_id=job_id)
+    repo_path = clone_repo(github_url, repo_id=repo_id)
     docs = load_and_chunk(repo_path)
     stored_count = store_documents(docs, repo_id=repo_id, job_id=job_id)
 

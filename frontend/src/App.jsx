@@ -1,45 +1,31 @@
-import { useState } from "react";
-
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Ingest from "./pages/Ingest";
+import ThreadList from "./pages/ThreadList";
 import Chat from "./pages/Chat";
+import LogoutButton from "./components/LogoutButton";
+
+function RequireAuth({ children }) {
+  const { token } = useAuth();
+  return token ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
-  const [token, setToken] = useState(null);
-  const [jobId, setJobId] = useState(null);
-  const [view, setView] = useState("dashboard"); // "dashboard" | "ingest" | "chat"
-
-  function handleLogout() {
-    setToken(null);
-    setJobId(null);
-    setView("dashboard");
-  }
-
-  if (!token) {
-    return <Auth onLogin={setToken} />;
-  }
+  const { token } = useAuth();
 
   return (
     <div className="relative">
-      <button
-        onClick={handleLogout}
-        className="fixed top-4 right-4 z-10 font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) border border-white/10 rounded-md px-3 py-1.5 bg-(--color-slate) transition"
-      >
-        $ logout
-      </button>
-
-      {view === "dashboard" && (
-        <Dashboard
-          token={token}
-          onSelectRepo={(id) => { setJobId(id); setView("chat"); }}
-          onNewIngest={() => setView("ingest")}
-        />
-      )}
-      {view === "ingest" && (
-        <Ingest token={token} onIngestComplete={(id) => { setJobId(id); setView("chat"); }} />
-      )}
-      {view === "chat" && <Chat token={token} jobId={jobId} />}
+      {token && <LogoutButton />}
+      <Routes>
+        <Route path="/login" element={token ? <Navigate to="/dashboard" replace /> : <Auth />} />
+        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/ingest" element={<RequireAuth><Ingest /></RequireAuth>} />
+        <Route path="/repos/:owner/:name/threads" element={<RequireAuth><ThreadList /></RequireAuth>} />
+        <Route path="/repos/:owner/:name/threads/:threadId" element={<RequireAuth><Chat /></RequireAuth>} />
+        <Route path="*" element={<Navigate to={token ? "/dashboard" : "/login"} replace />} />
+      </Routes>
     </div>
   );
 }
