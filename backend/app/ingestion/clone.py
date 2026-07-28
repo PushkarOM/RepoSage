@@ -18,19 +18,22 @@ def _remove_readonly(func, path, exc_info):
     func(path)
 
 
-def clone_repo(github_url: str, repo_id: str) -> Path:
+def clone_repo(github_url: str, repo_id: str, github_token: str | None = None) -> Path:
     """
-    Clones into a repo_id-scoped directory (e.g. "owner/name"), not a
-    job_id-scoped one. This is deliberate: repo_id is stable across
-    re-ingestions of the same repo, so re-running ingestion naturally
-    overwrites the same directory instead of accumulating a new one
-    per run -- this is also what makes a future "reingest" feature safe.
+    Clones into a repo_id-scoped directory. If github_token is provided,
+    it's injected into the clone URL for authenticated access to private
+    repos -- GitHub accepts a token as the HTTPS username with any/no
+    password. Falls back to a plain unauthenticated clone for public repos.
     """
     dest = Path(settings.clone_dir) / repo_id
     if dest.exists():
         shutil.rmtree(dest, onerror=_remove_readonly)
     dest.mkdir(parents=True, exist_ok=True)
 
-    Repo.clone_from(github_url, dest, depth=1)
+    clone_url = github_url
+    if github_token and github_url.startswith("https://"):
+        clone_url = github_url.replace("https://", f"https://{github_token}@")
+
+    Repo.clone_from(clone_url, dest, depth=1)
     return dest
 

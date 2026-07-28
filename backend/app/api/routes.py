@@ -49,10 +49,11 @@ def ingest(
     this repo in their dashboard and resume chatting with it later
     without re-ingesting.
     """
-    task = ingest_repo_task.delay(request.github_url)
-    repo_id = derive_repo_id(request.github_url)
+    
     user = db.query(User).filter(User.username == current_user).first()
-
+    task = ingest_repo_task.delay(request.github_url, user.id)
+    repo_id = derive_repo_id(request.github_url)
+    
     existing = (
         db.query(IngestedRepo)
         .filter(IngestedRepo.user_id == user.id, IngestedRepo.repo_id == repo_id)
@@ -105,7 +106,7 @@ def reingest(
     if not existing:
         raise HTTPException(status_code=404, detail="Repo not found")
 
-    task = ingest_repo_task.delay(existing.github_url)
+    task = ingest_repo_task.delay(request.github_url, user.id)
     existing.job_id = task.id
     existing.status = "queued"
     db.commit()
