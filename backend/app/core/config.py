@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     database_url: str = "sqlite:///./reposage.db"
 
+    rate_limit_chat_per_day: int = 50
+    rate_limit_ingest_per_day: int = 10
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

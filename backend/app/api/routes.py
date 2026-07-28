@@ -6,10 +6,12 @@ from celery.result import AsyncResult
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+
 from app.models.chat_threads import ChatThread
 
 from app.core.database import get_db
 from app.core.celery_app import celery_app
+from app.core.rate_limit import rate_limit
 
 from app.ingestion.tasks import ingest_repo_task
 from app.ingestion.utils import derive_repo_id
@@ -32,7 +34,9 @@ def ingest(
     request: IngestRequest,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _rl: None = Depends(rate_limit("ingest", "rate_limit_ingest_per_day", 86400)),
 ):
+
     """
     Kicks off ingestion as a background Celery task and returns
     immediately with a job_id, and records a row so the user can see
@@ -66,7 +70,12 @@ def ingest(
     return IngestResponse(job_id=task.id, repo_id=repo_id, status="queued")
 
 @router.post("/repos/reingest", response_model=IngestResponse)
-def reingest(request: ReingestRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def reingest(
+    request: ReingestRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db),
+    _rl: None = Depends(rate_limit("ingest", "rate_limit_ingest_per_day", 86400)),
+):
     """
     Re-triggers ingestion for a repo already tracked for this user, reusing
     its stored github_url. repo_id comes via the request body rather than
@@ -99,7 +108,10 @@ def reingest(request: ReingestRequest, current_user: str = Depends(get_current_u
 
 
 @router.get("/repos", response_model=list[RepoListResponse])
-def list_repos(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_repos(
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     user = db.query(User).filter(User.username == current_user).first()
     repos = (
         db.query(IngestedRepo)
@@ -111,7 +123,11 @@ def list_repos(current_user: str = Depends(get_current_user), db: Session = Depe
 
 
 @router.get("/repos/{repo_owner}/{repo_name}/threads", response_model=list[ThreadResponse])
-def list_threads(repo_owner: str, repo_name: str, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_threads(
+    repo_owner: str, repo_name: str, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     repo_id = f"{repo_owner}/{repo_name}"
     user = db.query(User).filter(User.username == current_user).first()
     return (
@@ -123,7 +139,11 @@ def list_threads(repo_owner: str, repo_name: str, current_user: str = Depends(ge
 
 
 @router.post("/threads", response_model=ThreadResponse)
-def create_thread(request: CreateThreadRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_thread(
+    request: CreateThreadRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     user = db.query(User).filter(User.username == current_user).first()
     thread = ChatThread(user_id=user.id, repo_id=request.repo_id, thread_id=str(uuid.uuid4()))
     db.add(thread)
@@ -132,7 +152,11 @@ def create_thread(request: CreateThreadRequest, current_user: str = Depends(get_
     return thread
 
 @router.post("/threads/{thread_id}/auto-title")
-async def auto_title_thread(thread_id: str, request: AutoTitleRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+async def auto_title_thread(
+    thread_id: str, request: AutoTitleRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     thread = db.query(ChatThread).filter(ChatThread.thread_id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -142,7 +166,11 @@ async def auto_title_thread(thread_id: str, request: AutoTitleRequest, current_u
 
 
 @router.patch("/threads/{thread_id}")
-def rename_thread(thread_id: str, request: RenameThreadRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+def rename_thread(
+    thread_id: str, request: RenameThreadRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
     thread = db.query(ChatThread).filter(ChatThread.thread_id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -151,7 +179,10 @@ def rename_thread(thread_id: str, request: RenameThreadRequest, current_user: st
     return {"title": thread.title}
 
 @router.get("/status/{job_id}", response_model=StatusResponse)
-def get_status(job_id: str, current_user: str = Depends(get_current_user)):
+def get_status(
+    job_id: str, 
+    current_user: str = Depends(get_current_user)
+):
     """
     Polls Celery's result backend (Redis) for task state.
     AsyncResult doesn't error on unknown IDs -- it just reports
@@ -170,7 +201,12 @@ def get_status(job_id: str, current_user: str = Depends(get_current_user)):
     return StatusResponse(job_id=job_id, state=result.state, result=response_result)
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+async def chat_endpoint(
+    request: ChatRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db),
+    _rl: None = Depends(rate_limit("chat", "rate_limit_chat_per_day", 86400)),
+):
     """
     Non-streaming chat endpoint -- waits for the full agent response,
     then returns it as one JSON payload. Kept alongside /chat/stream
@@ -199,7 +235,12 @@ async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_cu
 
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+async def chat_stream_endpoint(
+    request: ChatRequest, 
+    current_user: str = Depends(get_current_user), 
+    db: Session = Depends(get_db),
+    _rl: None = Depends(rate_limit("chat", "rate_limit_chat_per_day", 86400)),
+):
     """
     Streaming counterpart to /chat -- returns a text/plain response whose
     body is delivered incrementally as the agent generates it, rather

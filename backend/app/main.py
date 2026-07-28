@@ -5,15 +5,20 @@ from app.models import user  # noqa: F401
 from app.api.routes import router
 from app.api.auth import router as auth_router
 from app.agent.agent import init_agent, close_agent
+import redis.asyncio as redis
+from app.core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.embeddings import get_embedding_function
-    get_embedding_function()  
+    get_embedding_function()
+
+    app.state.redis = redis.from_url(settings.redis_url, decode_responses=True)
 
     await init_agent()
     yield
+    await app.state.redis.aclose()
     await close_agent()
 
 

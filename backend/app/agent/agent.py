@@ -85,6 +85,7 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
 
+    result = None
     for attempt in range(max_retries + 1):
         try:
             result = await agent.ainvoke(
@@ -94,9 +95,16 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
             break
         except Exception as e:
             error_str = str(e).lower()
-            if "429" in error_str or "rate limit" in error_str or "quota" in error_str or "resource_exhausted" in error_str:
-                return "The AI provider's free-tier quota is temporarily exhausted. Please try again shortly."
-            await asyncio.sleep(5 * (attempt + 1))
+            is_rate_limit = any(s in error_str for s in ("429", "rate limit", "quota", "resource_exhausted"))
+
+            if attempt == max_retries:
+                # Last attempt failed -- always return a clean message here,
+                # never fall through with result still unset.
+                if is_rate_limit:
+                    return "The AI provider's free-tier quota is temporarily exhausted. Please try again shortly."
+                return "Something went wrong while generating a response. Please try again."
+
+            await asyncio.sleep(5 * (attempt + 1) if is_rate_limit else 1)
 
     final_message = result["messages"][-1]
     content = final_message.content
@@ -106,37 +114,42 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
     return "\n".join(text_parts)
 
 
-async def chat_stream(message: str, thread_id: str):
+async def chat_stream(message: str, thread_id: str, max_retries: int = 2):
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
 
-    try:
-        # print("Starting stream")
+    for attempt in range(max_retries + 1):
+        try:
+            async for message_chunk, metadata in agent.astream(
+                {"messages": [{"role": "user", "content": message}]},
+                config=config,
+                stream_mode="messages",
+            ):
+                if metadata.get("langgraph_node") != "model":
+                    continue
+                content = message_chunk.content
+                if isinstance(content, str):
+                    if content:
+                        yield content
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                            if text:
+                                yield text
+            return  # streamed successfully, we're done
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = any(s in error_str for s in ("429", "rate limit", "quota", "resource_exhausted"))
 
-        async for message_chunk, metadata in agent.astream(
-            {"messages": [{"role": "user", "content": message}]},
-            config=config,
-            stream_mode="messages",
-        ):
-            # print("Received chunk")
-            # print(metadata)
-            if metadata.get("langgraph_node") != "model":
-                continue
-            content = message_chunk.content
-            if isinstance(content, str):
-                if content:
-                    yield content
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text = block.get("text", "")
-                        if text:
-                            yield text
-    except Exception as e:
-        error_str = str(e).lower()
-        if "429" in error_str or "rate limit" in error_str or "quota" in error_str or "resource_exhausted" in error_str:
-            # streaming version:
-            yield "\n\n[The AI provider's rate limit was hit. Please try again shortly.]"
+            if attempt == max_retries:
+                if is_rate_limit:
+                    yield "\n\n[The AI provider's free-tier quota is temporarily exhausted. Please try again shortly.]"
+                else:
+                    yield "\n\n[Something went wrong while generating a response. Please try again.]"
+                return
+
+            await asyncio.sleep(5 * (attempt + 1) if is_rate_limit else 1)
 
 async def get_history(thread_id: str) -> list[dict]:
     """
