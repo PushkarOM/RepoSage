@@ -1,9 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+
     embedding_provider: str = "local"
     embedding_model_local: str = "sentence-transformers/all-MiniLM-L6-v2"
-    
     
     llm_provider: str = "groq"  # "groq" or "gemini"
 
@@ -28,6 +28,12 @@ class Settings(BaseSettings):
 
     rate_limit_chat_per_day: int = 50
     rate_limit_ingest_per_day: int = 10
+
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
+
+    github_redirect_uri: str = "http://127.0.0.1:8000/auth/github/callback"
+    frontend_base_url: str = "http://localhost"
 
     model_config = SettingsConfigDict(
         env_file=".env",

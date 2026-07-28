@@ -1,7 +1,9 @@
 import uuid
+import secrets
+import httpx
 
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse, RedirectResponse
 from celery.result import AsyncResult
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -12,6 +14,8 @@ from app.models.chat_threads import ChatThread
 from app.core.database import get_db
 from app.core.celery_app import celery_app
 from app.core.rate_limit import rate_limit
+from app.core.config import settings
+from app.core.security import decode_access_token
 
 from app.ingestion.tasks import ingest_repo_task
 from app.ingestion.utils import derive_repo_id
@@ -25,6 +29,8 @@ from app.agent.agent import generate_title, get_history as agent_get_history
 
 from app.api.auth import get_current_user
 from app.api.schemas import IngestRequest, IngestResponse, StatusResponse, RepoListResponse, ChatRequest, ChatResponse, ReingestRequest, ThreadResponse, CreateThreadRequest, AutoTitleRequest, RenameThreadRequest
+
+
 
 router = APIRouter()
 
@@ -268,3 +274,59 @@ async def get_thread_messages(thread_id: str, current_user: str = Depends(get_cu
     scoped_thread_id = f"{current_user}:{thread_id}"
     return await agent_get_history(scoped_thread_id)
 
+@router.get("/auth/github/login")
+async def github_login(request: Request, token: str):
+    """
+    Starts the GitHub account-linking flow. Reached via a real browser
+    navigation (window.location.href or a clicked link) -- not fetch()/AJAX,
+    since it responds with a redirect to a different origin (github.com),
+    which fetch() restricts. Testing this via Swagger's "Try it out"
+    (which uses fetch() internally) fails for exactly that reason.
+
+    Because it's a full navigation, no Authorization header can be
+    attached -- the JWT travels as a query parameter instead, decoded
+    manually here rather than via the usual Depends(get_current_user).
+    """
+    username = decode_access_token(token)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    state = secrets.token_urlsafe(32)
+    await request.app.state.redis.set(f"oauth_state:{state}", username, ex=600)
+
+    github_url = (
+        "https://github.com/login/oauth/authorize"
+        f"?client_id={settings.github_client_id}"
+        f"&redirect_uri={settings.github_redirect_uri}"
+        f"&scope=repo"
+        f"&state={state}"
+    )
+    return RedirectResponse(github_url)
+
+@router.get("/auth/github/callback")
+async def github_callback(request: Request, code: str, state: str, db: Session = Depends(get_db)):
+    stored_username = await request.app.state.redis.get(f"oauth_state:{state}")
+    if not stored_username:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    await request.app.state.redis.delete(f"oauth_state:{state}")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "client_id": settings.github_client_id,
+                "client_secret": settings.github_client_secret,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+        )
+    token_data = token_resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="GitHub token exchange failed")
+
+    user = db.query(User).filter(User.username == stored_username).first()
+    user.github_access_token = access_token
+    db.commit()
+
+    return RedirectResponse(f"{settings.frontend_base_url}/dashboard?github_connected=true")
