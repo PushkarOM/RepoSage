@@ -1,5 +1,7 @@
 from langchain_core.tools import tool
 from app.ingestion.vectorstore import search
+from langchain.tools import tool, ToolRuntime
+from app.agent.context import AgentContext
 from pathlib import Path
 from app.core.config import settings
 import httpx
@@ -44,7 +46,7 @@ def get_file(repo_id: str, path: str) -> str:
         return f"Error: {path} is a binary file and cannot be displayed."
 
 @tool
-def list_good_first_issues(repo: str) -> str:
+def list_good_first_issues(repo: str, runtime: ToolRuntime[AgentContext]) -> str:
     """List open issues labeled 'good first issue' for a GitHub repo.
     Use this when the user asks about ways to contribute to the project.
 
@@ -54,12 +56,19 @@ def list_good_first_issues(repo: str) -> str:
     url = f"https://api.github.com/repos/{repo}/issues"
     params = {"labels": "good first issue", "state": "open", "per_page": 10}
 
+    headers = {}
+    token = runtime.context.github_token if runtime.context else None
+    if token:
+        headers["Authorization"] = f"token {token}"
+
     try:
-        response = httpx.get(url, params=params, timeout=10.0)
+        response = httpx.get(url, params=params, headers=headers, timeout=10.0)
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
-            return "GitHub API rate limit hit (60 requests/hour for unauthenticated calls). Try again later."
+            return "GitHub API rate limit hit. Try again later."
+        if e.response.status_code == 404:
+            return f"Repo '{repo}' not found or not accessible."
         return f"GitHub API error: {e.response.status_code}"
     except httpx.RequestError:
         return "Could not reach GitHub API."

@@ -53,7 +53,7 @@ def ingest(
     user = db.query(User).filter(User.username == current_user).first()
     task = ingest_repo_task.delay(request.github_url, user.id)
     repo_id = derive_repo_id(request.github_url)
-    
+
     existing = (
         db.query(IngestedRepo)
         .filter(IngestedRepo.user_id == user.id, IngestedRepo.repo_id == repo_id)
@@ -232,7 +232,8 @@ async def chat_endpoint(
     raw_thread_id = request.thread_id or request.repo_id
     thread_id = f"{current_user}:{raw_thread_id}"
     contextualized_message = f"[Repository repo_id: {request.repo_id}]\n{request.message}"
-    reply = await agent_chat(contextualized_message, thread_id=thread_id)
+    user = db.query(User).filter(User.username == current_user).first()
+    reply = await agent_chat(contextualized_message, thread_id=thread_id, github_token=user.github_access_token)
 
     db.query(ChatThread).filter(ChatThread.thread_id == raw_thread_id).update({"last_message_at": func.now()})
     db.commit()
@@ -265,8 +266,9 @@ async def chat_stream_endpoint(
     thread_id = f"{current_user}:{raw_thread_id}"
 
     contextualized_message = f"[Repository repo_id: {request.repo_id}]\n{request.message}"
+    user = db.query(User).filter(User.username == current_user).first()
     return StreamingResponse(
-        agent_chat_stream(contextualized_message, thread_id=thread_id),
+        agent_chat_stream(contextualized_message, thread_id=thread_id, github_token=user.github_access_token),
         media_type="text/plain",
     )
 
@@ -297,8 +299,8 @@ async def github_login(request: Request, token: str):
 
     github_url = (
         "https://github.com/login/oauth/authorize"
-        f"?client_id={settings.github_client_id}"
-        f"&redirect_uri={settings.github_redirect_uri}"
+        f"?client_id={settings.gh_client_id}"
+        f"&redirect_uri={settings.gh_redirect_uri}"
         f"&scope=repo"
         f"&state={state}"
     )
@@ -315,8 +317,8 @@ async def github_callback(request: Request, code: str, state: str, db: Session =
         token_resp = await client.post(
             "https://github.com/login/oauth/access_token",
             data={
-                "client_id": settings.github_client_id,
-                "client_secret": settings.github_client_secret,
+                "client_id": settings.gh_client_id,
+                "client_secret": settings.gh_client_secret,
                 "code": code,
             },
             headers={"Accept": "application/json"},

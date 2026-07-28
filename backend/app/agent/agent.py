@@ -4,6 +4,7 @@ from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
+from app.agent.context import AgentContext
 from app.agent.tools import search_codebase, get_file, list_good_first_issues
 from app.core.config import settings
 
@@ -67,6 +68,7 @@ async def init_agent():
         tools=[search_codebase, get_file, list_good_first_issues],
         checkpointer=checkpointer,
         system_prompt=SYSTEM_PROMPT,
+        context_schema=AgentContext,
     )
 
 
@@ -81,9 +83,10 @@ def get_agent():
     return _agent
 
 
-async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
+async def chat(message: str, thread_id: str, github_token: str | None = None, max_retries: int = 2) -> str:
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
+    context = AgentContext(github_token=github_token)
 
     result = None
     for attempt in range(max_retries + 1):
@@ -91,6 +94,7 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
             result = await agent.ainvoke(
                 {"messages": [{"role": "user", "content": message}]},
                 config=config,
+                context=context,
             )
             break
         except Exception as e:
@@ -114,15 +118,17 @@ async def chat(message: str, thread_id: str, max_retries: int = 2) -> str:
     return "\n".join(text_parts)
 
 
-async def chat_stream(message: str, thread_id: str, max_retries: int = 2):
+async def chat_stream(message: str, thread_id: str, github_token: str | None = None, max_retries: int = 2):
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
+    context = AgentContext(github_token=github_token)
 
     for attempt in range(max_retries + 1):
         try:
             async for message_chunk, metadata in agent.astream(
                 {"messages": [{"role": "user", "content": message}]},
                 config=config,
+                context=context,
                 stream_mode="messages",
             ):
                 if metadata.get("langgraph_node") != "model":
