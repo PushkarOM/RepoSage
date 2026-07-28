@@ -333,3 +333,8 @@ async def github_callback(request: Request, code: str, state: str, db: Session =
     db.commit()
 
     return RedirectResponse(f"{settings.frontend_base_url}/dashboard?github_connected=true")
+
+@router.get("/auth/github/status")
+def github_status(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == current_user).first()
+    return {"connected": bool(user.github_access_token)}

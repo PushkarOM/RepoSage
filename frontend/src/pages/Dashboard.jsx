@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { listRepos, reingestRepo, getStatus } from "../lib/api";
+import { listRepos, reingestRepo, getStatus, getGithubStatus, getGithubConnectUrl } from "../lib/api";
+
 
 function Dashboard() {
   const { token } = useAuth();
@@ -11,6 +12,25 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyIds, setBusyIds] = useState(new Set());
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [githubConnected, setGithubConnected] = useState(null); 
+  const [justConnected, setJustConnected] = useState(false);
+
+  useEffect(() => {
+    getGithubStatus(token).then((s) => setGithubConnected(s.connected));
+
+    if (searchParams.get("github_connected") === "true") {
+      setJustConnected(true);
+      setSearchParams({}, { replace: true }); // strip the query param so a refresh doesn't re-trigger this
+      const timer = setTimeout(() => setJustConnected(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [token]);
+
+  function handleConnectGithub() {
+    window.location.href = getGithubConnectUrl(token); // real browser navigation, not a fetch/React Router link
+  }
 
   useEffect(() => {
     refresh();
@@ -65,10 +85,30 @@ function Dashboard() {
       <div className="w-full max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="font-mono-ui text-lg text-(--color-bone)">$ your repos</h1>
-          <button onClick={() => navigate("/ingest")}  className="bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md px-4 py-2 hover:brightness-110 transition">
-            + ingest new
-          </button>
+          <div className="flex items-center gap-3">
+            {githubConnected === false && (
+              <button
+                onClick={handleConnectGithub}
+                className="font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) border border-white/10 rounded-md px-3 py-2 transition"
+              >
+                connect github
+              </button>
+            )}
+            {githubConnected === true && (
+              <span className="font-mono-ui text-xs text-(--color-diff-add)">✓ github connected</span>
+            )}
+            <button
+              onClick={() => navigate("/ingest")}
+              className="bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md px-4 py-2 hover:brightness-110 transition"
+            >
+              + ingest new
+            </button>
+          </div>
         </div>
+
+        {justConnected && (
+          <p className="text-sm text-(--color-diff-add) mb-4">GitHub account connected successfully.</p>
+        )}
 
         {loading && <p className="font-mono-ui text-sm text-(--color-steel)">loading...</p>}
         {error && <p className="text-sm text-(--color-diff-remove)">{error}</p>}

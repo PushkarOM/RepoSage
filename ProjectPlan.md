@@ -27,7 +27,7 @@ scope decisions below reflect that explicitly.
 - [x] "Your repos" dashboard — list previously ingested repos per user, resume chat without re-ingesting
 - [x] Syntax-highlighted code blocks in chat responses (react-markdown + react-syntax-highlighter)
 - [x] Citations in answers — via system_prompt instructing the agent to cite file paths inline
-- [x] LLM provider switch: Groq (faster, much higher free daily quota than Gemini)
+- [x] LLM provider switch: Groq (faster, much higher free daily quota than Gemini) — in progress
 
 ## Phase 2.5 — Repo identity & multi-conversation support (added mid-build, not in original plan)
 
@@ -45,8 +45,8 @@ the old job_id. Fix is architectural, not a patch:
 
 ## Phase 3 — Security / multi-tenancy
 
-- [ ] Per-user rate limiting / usage quotas (protect LLM quota + cost)
-- [ ] Private repo support via GitHub OAuth
+- [x] Per-user rate limiting / usage quotas (protect LLM quota + cost)
+- [x] Private repo support via GitHub OAuth
 
 ## Phase 4 — Agent / RAG depth
 
@@ -133,4 +133,33 @@ theoretical review.
 
 - Per-user rate limiting / usage quotas
 - Private repo support via GitHub OAuth
+
+## Phase 3 — done
+
+- Rate limiting: hand-rolled Redis fixed-window counter (INCR+EXPIRE), per-user, differentiated
+  limits for chat vs. ingest. Two real bugs found and fixed: `Depends(rate_limit(..., settings.x, ...))`
+  captures a resolved int at import time, not a live reference -- monkeypatching Settings afterward
+  had no effect. Fixed by passing the attribute *name* and doing `getattr(settings, ...)` fresh per
+  request. Second bug: chat()'s retry loop could fall through with `result` unset on a non-quota
+  exception, crashing with UnboundLocalError instead of returning a clean error message.
+- Private repo support via GitHub OAuth: account linking (not login) via state-correlated redirect
+  flow (Redis-backed, since JWT can't survive a top-level browser navigation to GitHub and back).
+  Token fetched fresh from Postgres inside the Celery task, never passed through the task queue.
+- Real bug + fix worth remembering: first attempt used a plain `contextvar` to give the
+  `list_good_first_issues` tool access to the user's GitHub token without exposing it to the LLM.
+  This silently failed -- LangGraph's ToolNode runs sync tools in a background thread pool, and
+  contextvars don't propagate across that boundary automatically. Replaced with LangChain's
+  purpose-built mechanism: `context_schema` + `ToolRuntime[Context]`, passed as an explicit
+  argument through the whole invocation rather than relying on ambient thread-local state.
+- Renamed GITHUB_* env vars to GH_* (GitHub Actions rejects GITHUB_-prefixed secret/variable names).
+- Frontend: GitHub connection status badge + connect button + post-redirect confirmation banner.
+
+## Next up: Phase 4 — Agent / RAG depth
+
+- Two concrete parked observations from earlier sessions to use as real test cases:
+  entity conflation (double-counting near-duplicate items across README sections) and
+  vague-query retrieval failure (generic questions score poorly via pure vector similarity)
+- Hybrid search (BM25 + vector)
+- Additional tools
+- Small evaluation harness to actually measure retrieval quality
 - 

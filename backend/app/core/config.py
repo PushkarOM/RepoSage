@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     rate_limit_ingest_per_day: int = 10
 
     gh_client_id: str | None = None
-    gh_secret: str | None = None
+    gh_client_secret: str | None = None
 
     gh_redirect_uri: str = "http://127.0.0.1:8000/auth/github/callback"
     frontend_base_url: str = "http://localhost"

@@ -44,7 +44,10 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
             call_count["n"] += 1
             self.id = f"fake-job-{call_count['n']}"
 
-    monkeypatch.setattr("app.api.routes.ingest_repo_task.delay", lambda url: FakeTask())
+    monkeypatch.setattr(
+        "app.api.routes.ingest_repo_task.delay",
+        lambda *args, **kwargs: FakeTask(),
+    )
 
     url = "https://github.com/owner/repo.git"
     r1 = client.post("/ingest", json={"github_url": url}, headers=headers)

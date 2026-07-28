@@ -34,7 +34,7 @@ def test_ingest_succeeds_with_valid_token(client, monkeypatch):
 
     monkeypatch.setattr(
         "app.api.routes.ingest_repo_task.delay",
-        lambda url: FakeTask(),
+        lambda *args, **kwargs: FakeTask(),
     )
 
     response = client.post(

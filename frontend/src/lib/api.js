@@ -147,3 +147,13 @@ export async function renameThread(token, threadId, title) {
   return handleResponse(response);
 }
 
+export function getGithubConnectUrl(token) {
+  return `${API_BASE}/auth/github/login?token=${token}`;
+}
+
+export async function getGithubStatus(token) {
+  const response = await authFetch(`${API_BASE}/auth/github/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return handleResponse(response);
+}
