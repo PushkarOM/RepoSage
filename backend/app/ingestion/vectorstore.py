@@ -2,6 +2,10 @@ import re
 import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rank_bm25 import BM25Okapi
 
 from app.core.config import settings
 from app.core.embeddings import get_embedding_function
