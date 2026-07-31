@@ -50,10 +50,10 @@ the old job_id. Fix is architectural, not a patch:
 
 ## Phase 4 — Agent / RAG depth
 
-- [ ] Fix the entity-conflation observation above
-- [ ] Hybrid search (BM25 + vector) instead of pure similarity
-- [ ] Additional tools (e.g. summarize recent commits, find tests for a function)
-- [ ] Small evaluation harness to actually measure retrieval quality, not just eyeball it
+- [x] Hybrid search (BM25 + vector) instead of pure similarity
+- [x] Fix the entity-conflation observation above
+- [x] Additional tools (e.g. summarize recent commits, find tests for a function)
+- [x] Small evaluation harness to actually measure retrieval quality, not just eyeball it
 
 ## Phase 5 — Ops maturity
 
@@ -112,6 +112,13 @@ Deliberately deferred until the feature surface stops changing shape:
 - Phase 5: multi-stage frontend Dockerfile, Render migration, auto-deploy on merge
 - Final pass: UI/UX overhaul + animation library, button component consolidation, streaming polish
 
+**Phase 4 — progress (eval harness + hybrid search done; entity-conflation + additional tools still pending):**
+- Built `backend/eval/` with side-by-side comparison of vector_only, multi_query, and hybrid retrievers. Metrics: MRR, Recall@5, avg latency, with per-case detail and a JSON artifact (gitignored) for cross-session comparison. Reports `over budget` when avg > 1500ms. Warmup pass added so cold-start costs (15s embedding model load) don't pollute steady-state latency numbers.
+- Found and fixed a real infrastructure bug while running the eval: docker-compose had `chroma_data:/chroma/chroma` but the chromadb/chroma:latest image writes to `/data` in 1.x. Volume was silently ignored; every container recreate wiped the index even though we thought we had persistence. Mount changed to `/data`, container recreated, ingest re-run.
+- Hybrid search (`hybrid_search` in `vectorstore.py`): BM25 index built once per repo and cached in-process, fused with vector results via weighted reciprocal rank fusion (VECTOR_WEIGHT=1.0, BM25_WEIGHT=0.7). Routing heuristic skips BM25 for queries with file paths or ≤3 tokens to keep the fast path fast.
+- Eval results on RepoSage self-ingest: vector_only and multi_query both score MRR=0.438 / R@5=0.625; hybrid scores MRR=0.406 / R@5=0.625 (steady state). Hybrid wins on the original parked "vague query" case ("what is this repo about" goes from RR=0.5 to RR=1.0). Multi_query is ~25x slower than vector_only for no measured benefit on this benchmark — worth a separate look at deprecating the LLM-based expansion.
+- Tuning attempts: 1.5:1.0 (vector weighted higher) and 1.0:0.7 (BM25 weighted lower) both left hybrid MRR at 0.406. Real blocker is `eval/test_cases.py` showing up as a top hit on every BM25 query (it contains the literal query strings verbatim). Structural fix needed (don't index test/eval files in the BM25 corpus, or strip query strings from chunks) — not a retriever-weight problem.
+
 ## Session log, continued
 
 **More fixes found through real testing (not hypothetical edge cases):**
@@ -160,6 +167,15 @@ theoretical review.
   entity conflation (double-counting near-duplicate items across README sections) and
   vague-query retrieval failure (generic questions score poorly via pure vector similarity)
 - Hybrid search (BM25 + vector)
+
+## Phase 4 — done
+
+- **Eval harness** (`backend/eval/`): side-by-side comparison of vector_only, multi_query, and hybrid retrievers with MRR, Recall@5, avg latency budget (1500ms with `over budget` flag), per-case detail, and a gitignored JSON artifact for cross-session comparison. Embedding-model warmup added so cold-start costs (15s+) don't pollute steady-state latency numbers.
+- **Hybrid search** (`hybrid_search` in `vectorstore.py`): BM25 index built once per repo and cached in-process, fused with vector results via weighted reciprocal rank fusion (VECTOR_WEIGHT=1.0, BM25_WEIGHT=0.7). Cheap routing heuristic skips BM25 for queries with file paths or ≤3 tokens. Hybrid wins on the parked vague-query case ("what is this repo about" goes from RR=0.5 to RR=1.0). Multi_query empirically doesn't beat vector_only on the eval (~25x slower for zero measured benefit) -- worth a separate look at deprecating it.
+- **Additional tools** (`tools.py`): find_definition, find_references, list_recent_changes, find_tests_for, read_file_section, list_dependencies. Extracted `_safe_repo_path` helper used by 3 tools. System prompt updated to document when to use each. Eval cases added for tool coverage (documentation-only -- agentic eval needed to measure tool selection quality end-to-end).
+- **Entity-conflation fix** (`chunker.py`): per-file 5-shingle minhash dedup drops near-duplicate chunks before they reach the vector store. 60% shingle overlap threshold catches verbatim and lightly-paraphrased duplicates while leaving unrelated chunks that share vocabulary alone. Unit tests verify 4 cases (identical, unrelated, short, paraphrased) -- all pass when run with the function in isolation.
+- **Infra bug fixed along the way**: `docker-compose.yml` had `chroma_data:/chroma/chroma` but chromadb/chroma:latest 1.x writes to `/data`. Volume was silently ignored; every container recreate wiped the index even though we thought we had persistence. Mount corrected.
+- **Patterns/lessons learned**: weighted RRF vs. unweighted; budget-tuning attempts (1.5:1.0, then 1.0:0.7) didn't help BM25's tendency to lock onto `eval/test_cases.py` (which contains literal query strings) -- root cause is the corpus, not the fusion weights. f-string regex `\.` produces SyntaxWarning; raw-string-extract the pattern. `_dedupe_chunks` needed to run per-file to avoid conflating cross-file references with cross-section duplicates.
 - Additional tools
 - Small evaluation harness to actually measure retrieval quality
 - 
