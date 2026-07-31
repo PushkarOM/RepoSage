@@ -40,4 +40,42 @@ TEST_CASES = [
         "query": "what is the directory structure of the backend",
         "expected_sources": ["(repository structure)"],
     },
+    # --- Tool-coverage cases below ---
+    # These cases target tools added in Phase 4 #2 (additional RAG tools).
+    # The retrieval eval doesn't invoke tools directly -- it measures
+    # whether search_codebase returns the right chunks. Tool selection and
+    # tool execution are verified by real chat use, not this harness.
+    # Listed here so we have a checklist of "things to ask" when testing
+    # the new tools, not because this eval will measure them.
+    {
+        "query": "when was the chunker last modified",
+        "expected_sources": ["backend/app/ingestion/chunker.py"],
+        "tool": "list_recent_changes",
+    },
+    {
+        "query": "find tests for the rate limit code",
+        "expected_sources": ["tests/test_rate_limit.py"],
+        "tool": "find_tests_for",
+    },
+    {
+        "query": "where is the search_codebase tool defined",
+        "expected_sources": ["tools.py"],
+        "tool": "find_definition",
+    },
+    {
+        "query": "show me lines 10 to 25 of backend/app/agent/agent.py",
+        "expected_sources": ["agent.py"],
+        "tool": "read_file_section",
+    },
+    # --- Entity-conflation dedup (Phase 4 #4) ---
+    # Not directly measurable by the retrieval eval: this is a chunker
+    # invariant, not a retrieval property. The post-dedup chunk count
+    # for RepoSage's README should be lower than the pre-dedup count.
+    # Verification: re-ingest and compare the per-source chunk counts
+    # in the eval artifact before and after the dedup landed.
+    {
+        "query": "dedup invariant: README.md chunks should not contain near-duplicate paragraphs",
+        "expected_sources": ["README.md"],
+        "invariant": "dedupe_chunks",
+    },
 ]

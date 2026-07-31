@@ -5,7 +5,18 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from app.agent.context import AgentContext
-from app.agent.tools import search_codebase, get_file, list_good_first_issues, get_directory_structure
+from app.agent.tools import (
+    search_codebase,
+    get_file,
+    list_good_first_issues,
+    get_directory_structure,
+    find_definition,
+    find_references,
+    list_recent_changes,
+    find_tests_for,
+    read_file_section,
+    list_dependencies,
+)
 from app.core.config import settings
 from app.core.llm import get_chat_model
 
@@ -25,13 +36,31 @@ Tool selection:
 - Use get_file when the user asks to explain, review, walk through, or see the code of a
   specific named file. It returns the full file content, giving you enough context for a
   real, detailed explanation -- not just a fragment.
+- Use read_file_section when the user names a file but only wants a slice of it
+  ("show me lines 10-20 of agent.py", "the rate_limit function"). Same path resolution
+  as get_file but bounded by line range, with line numbers in the result so you can
+  quote precise locations.
 - Use search_codebase to locate relevant code across the repo, or for broader conceptual
   questions where you don't know the exact file up front.
-- You can chain them: search_codebase to find the right file, then get_file to read it in
-  full before answering.
+- Use find_definition when the user is reading code and asks where a symbol
+  (function, class, variable) is defined -- "where is X defined?" is the most common
+  navigation question in a new repo.
+- Use find_references as the follow-up to find_definition: once you know where X is
+  defined, this shows where X is used, which reveals call patterns and integration
+  points.
+- Use list_recent_changes when the user asks about recent activity, recency of a
+  file, or "what's been worked on lately" -- git log scoped to a path or the whole repo.
+- Use find_tests_for when the user asks about test coverage or before modifying a file
+  ("which tests cover rate_limit.py?"). Returns test file paths; use get_file to read them.
+- Use list_dependencies when the user asks what the project uses, what the stack is,
+  or wants a high-level orientation to third-party libraries. Scans imports across
+  source files, returns packages ordered by usage frequency.
 - Use get_directory_structure when the user asks about the repo's organization, folder
   layout, or "what modules exist" -- search_codebase returns fragments and can't answer
   holistic structural questions well.
+- You can chain them: search_codebase to find the right file, then get_file to read it
+  in full before answering; or find_definition to locate X, then find_references to
+  see how X is used.
   
 When explaining code:
 - Go beyond a one-paragraph summary -- walk through the actual logic: what each function
@@ -78,7 +107,18 @@ async def init_agent():
 
     _agent = create_agent(
         model=_model,
-        tools=[search_codebase, get_file, list_good_first_issues, get_directory_structure],
+        tools=[
+            search_codebase,
+            get_file,
+            read_file_section,
+            find_definition,
+            find_references,
+            list_recent_changes,
+            find_tests_for,
+            list_dependencies,
+            list_good_first_issues,
+            get_directory_structure,
+        ],
         checkpointer=checkpointer,
         system_prompt=SYSTEM_PROMPT,
         context_schema=AgentContext,
