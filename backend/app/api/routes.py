@@ -106,7 +106,7 @@ def reingest(
     if not existing:
         raise HTTPException(status_code=404, detail="Repo not found")
 
-    task = ingest_repo_task.delay(request.github_url, user.id)
+    task = ingest_repo_task.delay(existing.github_url, user.id)
     existing.job_id = task.id
     existing.status = "queued"
     db.commit()

@@ -1,23 +1,24 @@
 from langchain_core.tools import tool
-from app.ingestion.vectorstore import search
+from app.ingestion.vectorstore import multi_search
 from langchain.tools import tool, ToolRuntime
 from app.agent.context import AgentContext
+from app.ingestion.structure import build_directory_tree
 from pathlib import Path
 from app.core.config import settings
 import httpx
 
 
 @tool
-def search_codebase(repo_id: str, query: str, doc_type: str | None = None) -> str:
+async def search_codebase(repo_id: str, query: str, doc_type: str | None = None) -> str:
     """Search the ingested repository for code or documentation relevant
     to the query. Always use the repo_id given in your context.
 
     Args:
-        repo_id: Identifies which repo to search (e.g. "owner/name").
+        repo_id: The ingestion job ID identifying which repo to search.
         query: What to search for.
         doc_type: Optional filter, "code" or "doc".
     """
-    results = search(query, k=5, doc_type=doc_type, repo_id=repo_id)
+    results = await multi_search(query, k=5, doc_type=doc_type, repo_id=repo_id)
     if not results:
         return "No relevant results found in the ingested repository."
     formatted = [f"[{r.metadata.get('source', 'unknown')}]\n{r.page_content}" for r in results]
@@ -79,3 +80,20 @@ def list_good_first_issues(repo: str, runtime: ToolRuntime[AgentContext]) -> str
 
     formatted = [f"#{i['number']}: {i['title']} ({i['html_url']})" for i in issues]
     return "\n".join(formatted)
+
+
+@tool
+def get_directory_structure(repo_id: str) -> str:
+    """Get the full directory/file structure of the ingested repository.
+    Use this when the user asks about the repo's organization, what
+    modules/folders exist, or where something might be located -- this
+    gives a holistic view that search_codebase (which returns small
+    content fragments) can't provide.
+
+    Args:
+        repo_id: Identifies which repo's structure to retrieve.
+    """
+    repo_dir = Path(settings.clone_dir) / repo_id
+    if not repo_dir.exists():
+        return "Error: repository not found. It may need to be re-ingested."
+    return build_directory_tree(repo_dir)

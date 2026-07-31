@@ -28,29 +28,80 @@ def get_vectorstore() -> Chroma:
 
 
 def store_documents(docs: list[Document], repo_id: str, job_id: str) -> int:
-    """
-    Embeds and persists chunks into the shared Chroma collection.
-    Before adding, deletes any existing chunks tagged with the same
-    repo_id — this makes re-ingestion an upsert instead of a duplicate
-    append. job_id is kept only for traceability of which run produced
-    a given chunk (useful for debugging failed/retried jobs).
-    """
     if not docs:
         return 0
 
     store = get_vectorstore()
 
+    # Find old chunks (if any) BEFORE inserting new ones, but don't delete
+    # yet -- deleting first, then inserting, has a real failure window: if
+    # the process dies between the two steps (e.g. a container restart
+    # mid-ingestion), the repo ends up with zero chunks instead of just
+    # stale ones. Inserting first means the worst case if interrupted is
+    # "briefly has both old and new data," never "has nothing."
     existing = store.get(where={"repo_id": repo_id})
-    existing_ids = existing.get("ids", [])
-    if existing_ids:
-        store.delete(ids=existing_ids)
+    old_ids = existing.get("ids", [])
 
     for doc in docs:
         doc.metadata["repo_id"] = repo_id
         doc.metadata["job_id"] = job_id
 
     store.add_documents(docs)
+
+    if old_ids:
+        store.delete(ids=old_ids)
+
     return len(docs)
+
+# backend/app/ingestion/vectorstore.py -- add
+async def expand_query(query: str) -> list[str]:
+    """
+    Generates a couple of alternative phrasings of the query via the LLM,
+    to catch relevant chunks a single vague/colloquial question might miss
+    entirely -- the multi-query retrieval pattern. Fails gracefully (empty
+    list) rather than blocking search entirely if the LLM call errors.
+    """
+    from app.core.llm import get_chat_model
+    model = get_chat_model()
+
+    prompt = (
+        "Generate 2 alternative search queries to help find relevant code or "
+        "documentation for this question, especially if it's vague. Focus on "
+        "specific technical terms, function/file names, or concepts likely to "
+        "appear in code. Return ONLY the 2 queries, one per line, no numbering.\n\n"
+        f"Question: {query}"
+    )
+    try:
+        response = await model.ainvoke([{"role": "user", "content": prompt}])
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+        return [line.strip() for line in content.strip().split("\n") if line.strip()][:2]
+    except Exception:
+        return []
+
+
+async def multi_search(query: str, k: int = 5, doc_type: str | None = None, repo_id: str | None = None) -> list[Document]:
+    """
+    Searches with the original query plus a couple of LLM-generated
+    expansions, merging and deduping results (by source + chunk_index)
+    rather than just using one. Capped at k total results even though
+    multiple queries can surface more candidates.
+    """
+    queries = [query] + await expand_query(query)
+    seen = set()
+    merged = []
+
+    for q in queries:
+        for r in search(q, k=k, doc_type=doc_type, repo_id=repo_id):
+            key = (r.metadata.get("source"), r.metadata.get("chunk_index"))
+            if key not in seen:
+                seen.add(key)
+                merged.append(r)
+
+    return merged[:k]
+
+
 
 def search(query: str, k: int = 5, doc_type: str | None = None, repo_id: str | None = None) -> list[Document]:
     """

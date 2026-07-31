@@ -5,8 +5,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from app.agent.context import AgentContext
-from app.agent.tools import search_codebase, get_file, list_good_first_issues
+from app.agent.tools import search_codebase, get_file, list_good_first_issues, get_directory_structure
 from app.core.config import settings
+from app.core.llm import get_chat_model
 
 _model = ChatGoogleGenerativeAI(
     model=settings.google_model_name,
@@ -28,7 +29,10 @@ Tool selection:
   questions where you don't know the exact file up front.
 - You can chain them: search_codebase to find the right file, then get_file to read it in
   full before answering.
-
+- Use get_directory_structure when the user asks about the repo's organization, folder
+  layout, or "what modules exist" -- search_codebase returns fragments and can't answer
+  holistic structural questions well.
+  
 When explaining code:
 - Go beyond a one-paragraph summary -- walk through the actual logic: what each function
   does, key control flow, notable design choices.
@@ -37,18 +41,27 @@ When explaining code:
 - Cite file paths in backticks when referencing them, but don't repeat "as seen in X file"
   after every sentence. Cite naturally, once per relevant claim.
 
+Formatting:
+- Use proper Markdown: bullet lists (- item) for enumerations, fenced code blocks (```)
+  for directory trees, file structure, or any code -- never plain unformatted text for
+  these.
+
+Accuracy:
+- Never state specific technology choices (databases, libraries, frameworks) unless you
+  have actually confirmed them via search_codebase or get_file in this conversation.
+  If you haven't verified something specific, say so or use a tool to check first,
+  rather than guessing based on what's typical for a similar-sounding project.
+- Never fabricate code examples. Only show code you've actually retrieved via get_file
+  or search_codebase -- if you want to illustrate usage and don't have a real example
+  retrieved, say that clearly rather than inventing one that looks plausible.
+
 You have full access to this conversation's history in your context. Never claim you can't
-recall earlier turns -- answer directly from the conversation above you."""
+recall earlier turns -- answer directly from the conversation above you.
+
+"""
 
 
-def _get_model():
-    if settings.llm_provider == "groq":
-        from langchain_groq import ChatGroq
-        return ChatGroq(model=settings.groq_model_name, api_key=settings.groq_api_key)
-    else:
-        return ChatGoogleGenerativeAI(model=settings.google_model_name, api_key=settings.google_api_key)
-
-_model = _get_model()
+_model = get_chat_model()
 
 async def init_agent():
     """
@@ -65,7 +78,7 @@ async def init_agent():
 
     _agent = create_agent(
         model=_model,
-        tools=[search_codebase, get_file, list_good_first_issues],
+        tools=[search_codebase, get_file, list_good_first_issues, get_directory_structure],
         checkpointer=checkpointer,
         system_prompt=SYSTEM_PROMPT,
         context_schema=AgentContext,

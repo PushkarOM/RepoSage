@@ -1,3 +1,5 @@
+from langchain_core.documents import Document
+from app.ingestion.structure import build_directory_tree
 from app.ingestion.clone import clone_repo
 from app.ingestion.chunker import load_and_chunk
 from app.ingestion.vectorstore import store_documents
@@ -15,11 +17,12 @@ def ingest_repo(github_url: str, job_id: str, github_token: str | None = None) -
     repo_id = derive_repo_id(github_url)
     repo_path = clone_repo(github_url, repo_id=repo_id, github_token=github_token)
     docs = load_and_chunk(repo_path)
-    stored_count = store_documents(docs, repo_id=repo_id, job_id=job_id)
 
-    return {
-        "repo_id": repo_id,
-        "job_id": job_id,
-        "chunks_stored": stored_count,
-        "status": "completed",
-    }
+    tree_text = build_directory_tree(repo_path)
+    docs.append(Document(
+        page_content=f"Directory structure of this repository:\n\n{tree_text}",
+        metadata={"source": "(repository structure)", "type": "structure", "chunk_index": 0},
+    ))
+
+    stored_count = store_documents(docs, repo_id=repo_id, job_id=job_id)
+    return {"repo_id": repo_id, "job_id": job_id, "chunks_stored": stored_count, "status": "completed"}

@@ -33,8 +33,18 @@ def load_and_chunk(repo_path: Path) -> list[Document]:
             continue
 
         for i, chunk in enumerate(splitter.split_text(text)):
+            # Prepending the file path to what actually gets embedded (not
+            # just stored as metadata) helps the embedding itself capture
+            # "this content belongs to this file/module" -- a raw code
+            # fragment alone often loses exactly the context that made it
+            # findable. This is safe to do: the header is plain text fed
+            # to the LLM as retrieved context, not injected into the
+            # frontend's rendering -- the model re-narrates it into its
+            # own real code fences when answering, it doesn't get echoed
+            # verbatim to the user.
+            header = f"[File: {rel_path}]\n"
             docs.append(Document(
-                page_content=chunk,
+                page_content=header + chunk,
                 metadata={"source": rel_path, "type": chunk_type, "chunk_index": i}
             ))
 
