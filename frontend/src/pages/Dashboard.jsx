@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { listRepos, reingestRepo, getStatus, getGithubStatus, getGithubConnectUrl } from "../lib/api";
-
+import { Button } from "../components/ui/button";
 
 function Dashboard() {
   const { token } = useAuth();
@@ -14,7 +14,7 @@ function Dashboard() {
   const [busyIds, setBusyIds] = useState(new Set());
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const [githubConnected, setGithubConnected] = useState(null); 
+  const [githubConnected, setGithubConnected] = useState(null);
   const [justConnected, setJustConnected] = useState(false);
 
   useEffect(() => {
@@ -22,14 +22,14 @@ function Dashboard() {
 
     if (searchParams.get("github_connected") === "true") {
       setJustConnected(true);
-      setSearchParams({}, { replace: true }); // strip the query param so a refresh doesn't re-trigger this
+      setSearchParams({}, { replace: true });
       const timer = setTimeout(() => setJustConnected(false), 4000);
       return () => clearTimeout(timer);
     }
   }, [token]);
 
   function handleConnectGithub() {
-    window.location.href = getGithubConnectUrl(token); // real browser navigation, not a fetch/React Router link
+    window.location.href = getGithubConnectUrl(token);
   }
 
   useEffect(() => {
@@ -41,7 +41,6 @@ function Dashboard() {
     listRepos(token)
       .then((data) => {
         setRepos(data);
-        // resume polling for anything still mid-ingestion (e.g. after a page reload)
         data.filter((r) => r.status === "queued").forEach((r) => pollStatus(r.job_id, r.repo_id));
       })
       .catch((err) => setError(err.message))
@@ -81,39 +80,31 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-(--color-ink) px-4 py-8">
+    <div className="min-h-[calc(100vh-57px)] bg-paper px-4 py-8">
       <div className="w-full max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="font-mono-ui text-lg text-(--color-bone)">$ your repos</h1>
+          <h1 className="font-display text-2xl text-ink tracking-tight">Your repos</h1>
           <div className="flex items-center gap-3">
             {githubConnected === false && (
-              <button
-                onClick={handleConnectGithub}
-                className="font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) border border-white/10 rounded-md px-3 py-2 transition"
-              >
+              <Button variant="ghost" size="sm" onClick={handleConnectGithub}>
                 connect github
-              </button>
+              </Button>
             )}
             {githubConnected === true && (
-              <span className="font-mono-ui text-xs text-(--color-diff-add)">✓ github connected</span>
+              <span className="font-mono text-xs text-success">✓ github connected</span>
             )}
-            <button
-              onClick={() => navigate("/ingest")}
-              className="bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md px-4 py-2 hover:brightness-110 transition"
-            >
-              + ingest new
-            </button>
+            <Button onClick={() => navigate("/ingest")}>+ ingest new</Button>
           </div>
         </div>
 
         {justConnected && (
-          <p className="text-sm text-(--color-diff-add) mb-4">GitHub account connected successfully.</p>
+          <p className="text-sm text-success mb-4">GitHub account connected successfully.</p>
         )}
 
-        {loading && <p className="font-mono-ui text-sm text-(--color-steel)">loading...</p>}
-        {error && <p className="text-sm text-(--color-diff-remove)">{error}</p>}
+        {loading && <p className="font-mono text-sm text-muted loading-breathe">loading...</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
         {!loading && repos.length === 0 && (
-          <p className="font-mono-ui text-sm text-(--color-steel)">// no repos ingested yet</p>
+          <p className="font-mono text-sm text-muted">// no repos ingested yet</p>
         )}
 
         <div className="space-y-2">
@@ -124,27 +115,29 @@ function Dashboard() {
               <div
                 key={repo.id}
                 onClick={() => clickable && navigate(`/repos/${repo.repo_id}/threads`)}
-                className={`bg-(--color-slate) border border-white/5 rounded-lg px-4 py-3 hover:border-(--color-amber)/50 transition flex items-center justify-between ${
+                className={`bg-elevated border border-rule rounded-lg px-4 py-3 hover:border-accent/50 transition flex items-center justify-between ${
                   clickable ? "cursor-pointer" : "cursor-default opacity-60"
                 }`}
               >
-                <span className="font-mono-ui text-sm text-(--color-bone)">{repo.repo_id}</span>
+                <span className="font-mono text-sm text-ink">{repo.repo_id}</span>
                 <div className="flex items-center gap-3">
-                  <span className={`font-mono-ui text-xs px-2 py-0.5 rounded flex items-center gap-1 ${
-                    repo.status === "success" ? "text-(--color-diff-add)"
-                    : repo.status === "failed" ? "text-(--color-diff-remove)"
-                    : "text-(--color-steel)"
+                  <span className={`font-mono text-xs px-2 py-0.5 rounded flex items-center gap-1 ${
+                    repo.status === "success" ? "text-success"
+                    : repo.status === "failed" ? "text-danger"
+                    : "text-muted"
                   }`}>
                     {busy && <span className="inline-block animate-spin">⟳</span>}
                     {busy ? "ingesting" : repo.status}
                   </span>
-                  <button
+                  <Button
+                    variant="link"
+                    size="link"
                     onClick={(e) => handleReingest(e, repo.repo_id)}
                     disabled={busy}
-                    className="font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) transition disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="text-muted hover:text-accent disabled:opacity-30"
                   >
                     ↻ reingest
-                  </button>
+                  </Button>
                 </div>
               </div>
             );

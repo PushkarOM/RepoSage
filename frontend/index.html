@@ -1,10 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="color-scheme" content="dark light" />
+    <title>RepoSage</title>
+    <script>
+      // Read theme preference before React mounts to avoid FOUC
+      (function () {
+        try {
+          var stored = localStorage.getItem("reposage_theme");
+          var mode = stored === "light" || stored === "dark"
+            ? stored
+            : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          document.documentElement.classList.toggle("dark", mode === "dark");
+          document.documentElement.classList.toggle("light", mode === "light");
+        } catch (e) { /* localStorage may be unavailable; dark default in :root applies */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

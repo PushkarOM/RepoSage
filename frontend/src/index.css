@@ -1,22 +1,154 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+/* Fonts — local via @fontsource-variable, no Google Fonts CDN */
+@import "@fontsource-variable/fraunces/index.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
 @import "tailwindcss";
 
-:root {
-  --color-ink: #14171C;
-  --color-slate: #1B212B;
-  --color-bone: #E8E6E1;
-  --color-steel: #8B92A1;
-  --color-amber: #D4A657;
-  --color-diff-add: #6BAF6B;
-  --color-diff-remove: #C4645A;
+/* =========================================================================
+   Theme tokens
+   Dark is primary. Light is paper. Class on <html> selects theme.
+   ========================================================================= */
+:root,
+.dark {
+  --color-paper: #14171C;
+  --color-elevated: #1B212B;
+  --color-ink: #E8E6E1;
+  --color-muted: #8B92A1;
+  --color-rule: #FFFFFF1A;
+  --color-accent: #6FA8FF;
+  --color-accent-strong: #4A86E8;
+  --color-success: #6BAF6B;
+  --color-danger: #C4645A;
 }
 
+.light {
+  --color-paper: #F4F1EA;
+  --color-elevated: #FBF9F4;
+  --color-ink: #1A1A1A;
+  --color-muted: #6B655A;
+  --color-rule: #1A1A1A1A;
+  --color-accent: #1F4FB8;
+  --color-accent-strong: #1F4FB8;
+  --color-success: #6BAF6B;
+  --color-danger: #C4645A;
+}
+
+/* Tailwind v4: expose tokens as utility classes (bg-paper, text-ink, ...)
+   We use direct values here; the .dark / .light classes on <html> override
+   them at runtime via the same CSS custom property names. */
+@theme {
+  --color-paper: #14171C;
+  --color-elevated: #1B212B;
+  --color-ink: #E8E6E1;
+  --color-muted: #8B92A1;
+  --color-rule: #FFFFFF1A;
+  --color-accent: #6FA8FF;
+  --color-accent-strong: #4A86E8;
+  --color-success: #6BAF6B;
+  --color-danger: #C4645A;
+
+  --font-display: "Fraunces Variable", "Fraunces", Georgia, serif;
+  --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Light theme overrides — applied via the .light class on <html> */
+.light {
+  --color-paper: #F4F1EA;
+  --color-elevated: #FBF9F4;
+  --color-ink: #1A1A1A;
+  --color-muted: #6B655A;
+  --color-rule: #1A1A1A1A;
+  --color-accent: #1F4FB8;
+  --color-accent-strong: #1F4FB8;
+}
+
+/* =========================================================================
+   Base
+   ========================================================================= */
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
 body {
-  background: var(--color-ink);
-  color: var(--color-bone);
-  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.font-mono-ui {
-  font-family: 'IBM Plex Mono', monospace;
+/* Subtle baseline rule used between blocks */
+.rule {
+  border-color: var(--color-rule);
+}
+
+/* Focus ring: visible everywhere, uses the darker accent variant */
+*:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+}
+
+/* =========================================================================
+   Motion — restrained by design
+   ========================================================================= */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.cursor-blink {
+  animation: cursor-blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes loading-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.loading-breathe {
+  animation: loading-breathe 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-blink,
+  .loading-breathe {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+/* Markdown prose inside chat messages — keeps within design palette */
+.prose-chat {
+  line-height: 1.6;
+}
+.prose-chat p {
+  margin: 0.4em 0;
+}
+.prose-chat p:first-child {
+  margin-top: 0;
+}
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+.prose-chat code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-rule);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.prose-chat ul,
+.prose-chat ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.prose-chat a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

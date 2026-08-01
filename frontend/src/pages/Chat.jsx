@@ -1,11 +1,10 @@
-import { useState, useRef, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
-import { streamChat, autoTitleThread } from "../lib/api"; 
+import { streamChat, autoTitleThread } from "../lib/api";
+import { Button } from "../components/ui/button";
+import MessageList from "../components/MessageList";
+import PromptBar from "../components/PromptBar";
 
 function Chat() {
   const { token } = useAuth();
@@ -21,8 +20,7 @@ function Chat() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [shouldAutoTitle, setShouldAutoTitle] = useState(isNewThread);
-  const logEndRef = useRef(null);
-  
+  const [threadTitle, setThreadTitle] = useState(null);
 
   useEffect(() => {
     setLoadingHistory(true);
@@ -30,16 +28,15 @@ function Chat() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
-      .then(setMessages)
+      .then((data) => {
+        setMessages(data);
+        if (data.length && data[0].title) setThreadTitle(data[0].title);
+      })
       .catch(() => setMessages([]))
       .finally(() => setLoadingHistory(false));
   }, [threadId]);
 
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
-
-   async function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const text = input.trim();
     if (!text || sending) return;
@@ -62,8 +59,10 @@ function Chat() {
       });
 
       if (shouldAutoTitle) {
-        autoTitleThread(token, threadId, text).catch(() => {});
-        setShouldAutoTitle(false);   // never fire again for this thread
+        autoTitleThread(token, threadId, text)
+          .then((res) => { if (res?.title) setThreadTitle(res.title); })
+          .catch(() => {});
+        setShouldAutoTitle(false);
       }
     } catch (err) {
       setError(err.message);
@@ -72,85 +71,49 @@ function Chat() {
     }
   }
 
-
   return (
-    <div className="min-h-screen bg-(--color-ink) px-4 py-8">
-      <div className="w-full max-w-2xl mx-auto">
-      <button onClick={() => navigate(`/repos/${repoId}/threads`)} className="mr-auto font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) mb-4">
-          ← back
-      </button>
-      <div className="w-full max-w-2xl bg-(--color-slate) border border-white/5 rounded-lg shadow-xl flex flex-col h-[80vh]">
-        
-        <div className="px-6 py-4 border-b border-white/5">
-          <p className="font-mono-ui text-xs text-(--color-amber)">$ chat --Repo {repoId.slice(0, 8)}</p>
-          <h1 className="font-mono-ui text-lg text-(--color-bone) mt-1">RepoSage</h1>
+    <div className="min-h-[calc(100vh-57px)] bg-paper px-4 py-6">
+      <div className="w-full max-w-3xl mx-auto">
+        {/* The PromptBar lives in the global header. Here we keep an in-card
+            sub-header that shows the agent identity (the only serif moment). */}
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="font-display text-xl text-ink tracking-tight">RepoSage</h2>
+          <span className="font-mono text-xs text-muted">chat with this repo</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {loadingHistory && <p className="font-mono-ui text-sm text-(--color-steel)">loading conversation...</p>}
-          {!loadingHistory && messages.length === 0 && (
-            <p className="font-mono-ui text-sm text-(--color-steel)">// repo ingested — ask about implementation, structure, or good-first-issues</p>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className="flex gap-2">
-              <span
-                className={`font-mono-ui text-sm shrink-0 ${
-                  m.who === "you" ? "text-(--color-amber)" : "text-(--color-diff-add)"
-                }`}
-              >
-                {m.who === "you" ? ">" : "$"}
-              </span>
-             <div className="text-sm text-(--color-bone) leading-relaxed prose-chat">
-              <ReactMarkdown
-                components={{
-                  code({ inline, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || "");
-                    return !inline && match ? (
-                      <SyntaxHighlighter
-                        style={vscDarkPlus}
-                        language={match[1]}
-                        PreTag="div"
-                        customStyle={{ borderRadius: "8px", fontSize: "13px", margin: "8px 0" }}
-                      >
-                        {String(children).replace(/\n$/, "")}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <code className="bg-white/10 px-1.5 py-0.5 rounded text-(--color-amber) text-xs" {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {m.text}
-              </ReactMarkdown>
-            </div>
-            </div>
-          ))}
-          <div ref={logEndRef} />
+        <div className="w-full bg-elevated border border-rule rounded-lg shadow-xl flex flex-col h-[78vh]">
+          <div className="px-6 py-3 border-b border-rule">
+            <PromptBar threadTitle={threadTitle ?? undefined} />
+          </div>
+
+          <MessageList messages={messages} loadingHistory={loadingHistory} />
+
+          <form onSubmit={handleSubmit} className="px-6 py-4 border-t border-rule flex gap-2 items-center">
+            <span className="font-mono text-sm text-accent">{">"}</span>
+            <input
+              type="text"
+              placeholder="ask something about the repo..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={sending}
+              className="flex-1 bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent-strong disabled:opacity-50"
+            />
+            <Button type="submit" disabled={sending}>
+              send
+            </Button>
+          </form>
+
+          {error && <p className="px-6 pb-3 text-sm text-danger">{error}</p>}
         </div>
 
-        <form onSubmit={handleSubmit} className="px-6 py-4 border-t border-white/5 flex gap-2">
-          <span className="font-mono-ui text-sm text-(--color-amber) pt-2">{">"}</span>
-          <input
-            type="text"
-            placeholder="ask something about the repo..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={sending}
-            className="flex-1 bg-(--color-ink) border border-white/10 rounded-md px-3 py-2 text-(--color-bone) text-sm placeholder:text-(--color-steel)/50 focus:outline-none focus:ring-2 focus:ring-(--color-amber) disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={sending}
-            className="bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md px-4 hover:brightness-110 transition disabled:opacity-50"
-          >
-            send
-          </button>
-        </form>
-
-        {error && <p className="px-6 pb-3 text-sm text-(--color-diff-remove)">{error}</p>}
-      </div>
+        <Button
+          variant="link"
+          size="link"
+          onClick={() => navigate(`/repos/${repoId}/threads`)}
+          className="mt-3 text-muted hover:text-accent"
+        >
+          ← all conversations
+        </Button>
       </div>
     </div>
   );

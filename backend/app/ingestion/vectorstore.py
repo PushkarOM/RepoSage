@@ -18,7 +18,7 @@ COLLECTION_NAME = "reposage"
 # (TreebankWordTokenizer, stop-word removal) costs more in latency than
 # it returns for retrieval quality here.
 _BM25_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
-
+    
 # Reciprocal rank fusion constant. k=60 is the value from the original
 # Cormack et al. (2009) paper and the de-facto default in every hybrid
 # retrieval reference since -- changing it is a knob, not a bug to chase.

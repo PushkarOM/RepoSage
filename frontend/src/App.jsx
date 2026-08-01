@@ -5,7 +5,11 @@ import Dashboard from "./pages/Dashboard";
 import Ingest from "./pages/Ingest";
 import ThreadList from "./pages/ThreadList";
 import Chat from "./pages/Chat";
+import Landing from "./pages/Landing";
 import LogoutButton from "./components/LogoutButton";
+import PromptBar from "./components/PromptBar";
+import ThemeToggle from "./components/ThemeToggle";
+import { useTheme } from "./lib/useTheme";
 
 function RequireAuth({ children }) {
   const { token } = useAuth();
@@ -14,17 +18,29 @@ function RequireAuth({ children }) {
 
 function App() {
   const { token } = useAuth();
+  // Mounts the theme hook so the class is applied + persisted on first load
+  useTheme();
 
   return (
-    <div className="relative">
-      {token && <LogoutButton />}
+    <div className="min-h-screen bg-paper text-ink">
+      <header className="w-full px-4 py-3 flex items-center justify-between border-b border-rule">
+        <PromptBar />
+        {token && (
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <LogoutButton />
+          </div>
+        )}
+        {!token && <ThemeToggle />}
+      </header>
       <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={token ? <Navigate to="/dashboard" replace /> : <Auth />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/ingest" element={<RequireAuth><Ingest /></RequireAuth>} />
         <Route path="/repos/:owner/:name/threads" element={<RequireAuth><ThreadList /></RequireAuth>} />
         <Route path="/repos/:owner/:name/threads/:threadId" element={<RequireAuth><Chat /></RequireAuth>} />
-        <Route path="*" element={<Navigate to={token ? "/dashboard" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={token ? "/dashboard" : "/"} replace />} />
       </Routes>
     </div>
   );

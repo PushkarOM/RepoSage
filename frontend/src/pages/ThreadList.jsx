@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { listThreads, createThread, renameThread } from "../lib/api";
+import { Button } from "../components/ui/button";
 
 function ThreadList() {
   const { token } = useAuth();
@@ -42,25 +43,29 @@ function ThreadList() {
   }
 
   return (
-    <div className="min-h-screen bg-(--color-ink) px-4 py-8">
+    <div className="min-h-[calc(100vh-57px)] bg-paper px-4 py-8">
       <div className="w-full max-w-2xl mx-auto">
-        <button onClick={() => navigate("/dashboard")} className="font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber) mb-4">
+        <Button
+          variant="link"
+          size="link"
+          onClick={() => navigate("/dashboard")}
+          className="mb-4 text-muted hover:text-accent"
+        >
           ← back
-        </button>
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="font-mono-ui text-lg text-(--color-bone)">$ {repoId}</h1>
-          <button
-            onClick={handleNewChat}
-            disabled={creating}
-            className="bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md px-4 py-2 hover:brightness-110 transition disabled:opacity-50"
-          >
+        </Button>
+
+        <div className="flex items-center justify-between mb-6 gap-3">
+          <h1 className="font-display text-2xl text-ink tracking-tight truncate min-w-0">
+            {repoId}
+          </h1>
+          <Button onClick={handleNewChat} disabled={creating} className="shrink-0">
             {creating ? "creating..." : "+ new chat"}
-          </button>
+          </Button>
         </div>
 
-        {loading && <p className="font-mono-ui text-sm text-(--color-steel)">loading...</p>}
+        {loading && <p className="font-mono text-sm text-muted loading-breathe">loading...</p>}
         {!loading && threads.length === 0 && (
-          <p className="font-mono-ui text-sm text-(--color-steel)">// no conversations yet -- start one above</p>
+          <p className="font-mono text-sm text-muted">// no conversations yet — start one above</p>
         )}
 
         <div className="space-y-2">
@@ -68,24 +73,35 @@ function ThreadList() {
             <div
               key={t.id}
               onClick={() => editingId !== t.id && navigate(`/repos/${repoId}/threads/${t.thread_id}`, { state: { isNew: false } })}
-              className="bg-(--color-slate) border border-white/5 rounded-lg px-4 py-3 hover:border-(--color-amber)/50 transition flex items-center justify-between cursor-pointer"
+              className="bg-elevated border border-rule rounded-lg px-4 py-3 hover:border-accent/50 transition flex items-center justify-between gap-3 cursor-pointer"
             >
               {editingId === t.id ? (
-                <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
                   <input
                     autoFocus
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && saveRename(t)}
-                    className="bg-(--color-ink) border border-white/10 rounded px-2 py-1 text-sm text-(--color-bone) flex-1"
+                    className="bg-paper border border-rule rounded px-2 py-1 text-sm text-ink flex-1 min-w-0"
                   />
-                  <button onClick={() => saveRename(t)} className="font-mono-ui text-xs text-(--color-diff-add) px-2 py-1">save</button>
-                  <button onClick={() => setEditingId(null)} className="font-mono-ui text-xs text-(--color-steel) px-2 py-1">cancel</button>
+                  <Button variant="link" size="link" onClick={() => saveRename(t)} className="text-success shrink-0">
+                    save
+                  </Button>
+                  <Button variant="link" size="link" onClick={() => setEditingId(null)} className="text-muted shrink-0">
+                    cancel
+                  </Button>
                 </div>
               ) : (
                 <>
-                  <span className="font-mono-ui text-sm text-(--color-bone)">{t.title}</span>
-                  <button onClick={(e) => startEditing(e, t)} className="font-mono-ui text-xs text-(--color-steel) hover:text-(--color-amber)">✎ rename</button>
+                  <span className="font-mono text-sm text-ink truncate min-w-0 flex-1">{t.title}</span>
+                  <Button
+                    variant="link"
+                    size="link"
+                    onClick={(e) => startEditing(e, t)}
+                    className="text-muted hover:text-accent shrink-0"
+                  >
+                    ✎ rename
+                  </Button>
                 </>
               )}
             </div>

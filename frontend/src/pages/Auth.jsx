@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { register, login as loginApi } from "../lib/api";
+import { Button } from "../components/ui/button";
 
 function Auth() {
-  
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -13,7 +13,6 @@ function Auth() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mode, setMode] = useState("login");
-
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
@@ -37,55 +36,53 @@ function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-(--color-ink) px-4">
-      <div className="w-full max-w-sm bg-(--color-slate) border border-white/5 rounded-lg p-8 shadow-xl">
-        <p className="font-mono-ui text-xs text-(--color-amber) mb-1">
-          $ auth --mode {mode}
+    <div className="min-h-[calc(100vh-57px)] flex items-center justify-center px-4 bg-paper">
+      <div className="w-full max-w-sm bg-elevated border border-rule rounded-lg p-8 shadow-xl">
+        <p className="font-mono text-xs text-muted mb-1">
+          <span className="text-accent">$</span> auth --mode {mode}
         </p>
-        <h1 className="font-mono-ui text-lg text-[(--color-bone) mb-6">RepoSage</h1>
+        <h1 className="font-display text-3xl text-ink mb-6 tracking-tight">RepoSage</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="font-mono-ui text-xs uppercase tracking-wide text-(--color-steel)">
+            <label className="font-mono text-xs uppercase tracking-wide text-muted">
               username
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 w-full bg-(--color-ink) border border-white/10 rounded-md px-3 py-2 text-[(--color-bone) text-sm focus:outline-none focus:ring-2 focus:ring-(--color-amber)"
+              className="mt-1 w-full bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-strong"
             />
           </div>
           <div>
-            <label className="font-mono-ui text-xs uppercase tracking-wide text-(--color-steel)">
+            <label className="font-mono text-xs uppercase tracking-wide text-muted">
               password
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full bg-(--color-ink) border border-white/10 rounded-md px-3 py-2 text-[(--color-bone) text-sm focus:outline-none focus:ring-2 focus:ring-(--color-amber)"
+              className="mt-1 w-full bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-strong"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-(--color-amber) text-(--color-ink) font-mono-ui text-sm font-medium rounded-md py-2 hover:brightness-110 transition disabled:opacity-50"
-          >
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? (mode === "login" ? "logging in..." : "registering...") : (mode === "login" ? "login" : "register")}
-          </button>
+          </Button>
         </form>
 
-        <button
-          className="mt-4 text-xs text-(--color-steel) hover:text-(--color-amber) transition"
+        <Button
+          variant="link"
+          size="link"
           onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setNotice(""); }}
+          className="mt-4 text-muted hover:text-accent"
         >
           {mode === "login" ? "need an account? register" : "have an account? login"}
-        </button>
+        </Button>
 
-        {notice && <p className="mt-3 text-sm text-(--color-diff-add)">{notice}</p>}
-        {error && <p className="mt-3 text-sm text-(--color-diff-remove)">{error}</p>}
+        {notice && <p className="mt-3 text-sm text-success">{notice}</p>}
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       </div>
     </div>
   );
