@@ -121,6 +121,58 @@ Deliberately deferred until the feature surface stops changing shape:
 
 ## Session log, continued
 
+**2026-08-01 — Final UX sweep + streaming polish (this session)**
+
+Three production issues reported right after the third-pass sweep shipped, each fixed in turn:
+
+1. **Tool-call syntax leaking as plain text.** Llama 3.3 70B via Groq occasionally emits
+   `<function>search_codebase{...}</function>` as prose instead of as a structured tool call,
+   and the markup leaks to the user as raw HTML-looking text. Fixed in two layers:
+   - Backend `agent.py` — added "Tool calling mechanics" section to `SYSTEM_PROMPT`
+     explicitly forbidding text-form tool calls; added `_LEAKED_CALL_RE` regex scrubber
+     in `chat_stream()` that strips leaked `<function|tool|invoke|action>…</…>` markup
+     from yielded text before it reaches the user.
+   - Frontend unchanged — scrub happens at the streaming boundary.
+
+2. **Streaming typewriter "rest jumps in" bug.** First 4-5 lines typed correctly, then the
+   rest of the response dumped in all at once. Three iterations:
+   - Per-character `setTimeout` chain → failed
+   - Single persistent `setInterval` per Message draining a queue → still dumped after 4-5 lines
+   - Architecture split: plain text while streaming, swap to ReactMarkdown on stream end
+     → no improvement
+   - **Real fix:** `useLayoutEffect` with no deps array in `MessageList.jsx`. The
+     typewriter drains `displayedText` inside the `Message` component, and the parent's
+     `messages` array doesn't change during that drain — so any effect keyed on `messages`
+     only fires when a new chunk arrives. With no deps, `useLayoutEffect` runs on every
+     render (including typewriter-driven re-renders), and the scroll keeps up with the
+     character-by-character growth. Used `behavior: "auto"` (instant) since smooth scroll
+     lags too far behind rapid appends. User confirmed: "Works."
+
+3. **LaTeX rendering in agent responses.** Math like `$O(n \log n)$` was showing as raw
+   LaTeX text. Added `remark-math@^6.0.0` + `rehype-katex@^7.0.1` + `katex@^0.16.11`
+   (installed by user) and wired into `Message.jsx`'s ReactMarkdown. Updated `SYSTEM_PROMPT`
+   to encourage math notation. The streaming/not-streaming split handles this for free —
+   raw `$...$` is readable while typing via `whitespace-pre-wrap`, rendered properly
+   when the stream ends.
+
+**Files touched this session (14 files, +708/-101):**
+- `backend/app/agent/agent.py` — system prompt section + regex scrubber
+- `frontend/src/components/Message.jsx` — word-level typewriter + KaTeX wiring
+- `frontend/src/components/MessageList.jsx` — `useLayoutEffect` no-deps fix
+- `frontend/src/components/PromptBar.jsx` — long-title truncation
+- `frontend/src/index.css` — `.prose-chat` rules (h1-h4, blockquote, pre overflow-x-auto)
+- `frontend/src/lib/api.js` — `getThreadMessages` helper + 422 detail coercion
+- `frontend/src/pages/{Auth,Chat,Dashboard,Ingest,ThreadList}.jsx` — accessibility, error
+  handling, loading states, truncation
+- `frontend/package.json` + `package-lock.json` — KaTeX deps
+
+**Known issue parked:** "Dumpy jump" — occasional mid-stream dumps where the typewriter
+stalls for a few seconds then a large chunk appears all at once. User explicitly deferred
+to a later session ("will tackle the dunpy jump later on"). Likely a server-side chunking
+issue (LLM emits a large delta, the animation queue can only drain as fast as it ticks).
+Possible fix candidates: throttle typewriter to fixed chars-per-tick, or smooth the parent
+position when the bubble grows faster than the animation.
+
 **More fixes found through real testing (not hypothetical edge cases):**
 - nginx serving the SPA build had no fallback route -- reloading on any non-root path (e.g. deep in a chat thread) 404'd. Fixed with `try_files $uri /index.html` in a proper `nginx.conf`.
 - No real client-side routing existed at all -- App.jsx was a hand-rolled state switch, so the browser URL never changed and back/forward/reload were all broken. Replaced with React Router; JWT persisted in localStorage via AuthContext (documented as a known tradeoff vs. httpOnly cookies).

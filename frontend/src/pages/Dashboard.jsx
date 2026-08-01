@@ -18,7 +18,9 @@ function Dashboard() {
   const [justConnected, setJustConnected] = useState(false);
 
   useEffect(() => {
-    getGithubStatus(token).then((s) => setGithubConnected(s.connected));
+    getGithubStatus(token)
+      .then((s) => setGithubConnected(s?.connected ?? false))
+      .catch(() => setGithubConnected(false));
 
     if (searchParams.get("github_connected") === "true") {
       setJustConnected(true);
@@ -38,12 +40,13 @@ function Dashboard() {
 
   function refresh() {
     setLoading(true);
+    setError("");
     listRepos(token)
       .then((data) => {
         setRepos(data);
         data.filter((r) => r.status === "queued").forEach((r) => pollStatus(r.job_id, r.repo_id));
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err.message || "Failed to load repos."))
       .finally(() => setLoading(false));
   }
 
@@ -70,12 +73,13 @@ function Dashboard() {
 
   async function handleReingest(e, repoId) {
     e.stopPropagation();
+    setError("");
     try {
       const result = await reingestRepo(token, repoId);
       setRepos((prev) => prev.map((r) => (r.repo_id === repoId ? { ...r, status: "queued" } : r)));
       pollStatus(result.job_id, repoId);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Failed to start reingest.");
     }
   }
 
@@ -98,12 +102,16 @@ function Dashboard() {
         </div>
 
         {justConnected && (
-          <p className="text-sm text-success mb-4">GitHub account connected successfully.</p>
+          <p role="status" aria-live="polite" className="text-sm text-success mb-4">GitHub account connected successfully.</p>
         )}
 
-        {loading && <p className="font-mono text-sm text-muted loading-breathe">loading...</p>}
-        {error && <p className="text-sm text-danger">{error}</p>}
-        {!loading && repos.length === 0 && (
+        {loading && <p aria-live="polite" className="font-mono text-sm text-muted loading-breathe">loading...</p>}
+        {error && (
+          <p role="alert" aria-live="polite" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+        {!loading && !error && repos.length === 0 && (
           <p className="font-mono text-sm text-muted">// no repos ingested yet</p>
         )}
 
@@ -111,34 +119,41 @@ function Dashboard() {
           {repos.map((repo) => {
             const busy = busyIds.has(repo.repo_id) || repo.status === "queued";
             const clickable = repo.status === "success" && !busy;
+            // Dim only the informational parts of the row, not the action button.
+            // The reingest button is fully functional even for failed/busy rows,
+            // so it should never inherit the row's disabled opacity.
+            const infoDim = !clickable ? "opacity-60" : "";
             return (
               <div
                 key={repo.id}
                 onClick={() => clickable && navigate(`/repos/${repo.repo_id}/threads`)}
-                className={`bg-elevated border border-rule rounded-lg px-4 py-3 hover:border-accent/50 transition flex items-center justify-between ${
-                  clickable ? "cursor-pointer" : "cursor-default opacity-60"
+                className={`bg-elevated border border-rule rounded-lg px-4 py-3 hover:border-accent/50 transition flex items-center justify-between gap-3 ${
+                  clickable ? "cursor-pointer" : "cursor-default"
                 }`}
               >
-                <span className="font-mono text-sm text-ink">{repo.repo_id}</span>
-                <div className="flex items-center gap-3">
-                  <span className={`font-mono text-xs px-2 py-0.5 rounded flex items-center gap-1 ${
+                <div className={`flex items-center gap-3 min-w-0 flex-1 ${infoDim}`}>
+                  <span className="font-mono text-sm text-ink truncate min-w-0" title={repo.repo_id}>
+                    {repo.repo_id}
+                  </span>
+                  <span className={`font-mono text-xs px-2 py-0.5 rounded flex items-center gap-1 shrink-0 ${
                     repo.status === "success" ? "text-success"
                     : repo.status === "failed" ? "text-danger"
                     : "text-muted"
-                  }`}>
-                    {busy && <span className="inline-block animate-spin">⟳</span>}
+                  }`} aria-label={`Status: ${repo.status}`}>
+                    {busy && <span className="inline-block animate-spin" aria-hidden="true">⟳</span>}
                     {busy ? "ingesting" : repo.status}
                   </span>
-                  <Button
-                    variant="link"
-                    size="link"
-                    onClick={(e) => handleReingest(e, repo.repo_id)}
-                    disabled={busy}
-                    className="text-muted hover:text-accent disabled:opacity-30"
-                  >
-                    ↻ reingest
-                  </Button>
                 </div>
+                <Button
+                  variant="link"
+                  size="link"
+                  onClick={(e) => handleReingest(e, repo.repo_id)}
+                  disabled={busy}
+                  aria-label={`Reingest ${repo.repo_id}`}
+                  className="text-muted hover:text-accent disabled:opacity-30 shrink-0"
+                >
+                  ↻ reingest
+                </Button>
               </div>
             );
           })}

@@ -12,19 +12,27 @@ function ThreadList() {
 
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
-    listThreads(token, repoId).then(setThreads).finally(() => setLoading(false));
+    setError("");
+    listThreads(token, repoId)
+      .then(setThreads)
+      .catch((err) => setError(err.message || "Failed to load conversations."))
+      .finally(() => setLoading(false));
   }, [repoId]);
 
   async function handleNewChat() {
     setCreating(true);
+    setError("");
     try {
       const thread = await createThread(token, repoId);
       navigate(`/repos/${repoId}/threads/${thread.thread_id}`, { state: { isNew: true } });
+    } catch (err) {
+      setError(err.message || "Failed to start a new conversation.");
     } finally {
       setCreating(false);
     }
@@ -37,9 +45,16 @@ function ThreadList() {
   }
 
   async function saveRename(thread) {
-    await renameThread(token, thread.thread_id, editValue);
-    setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, title: editValue } : t)));
-    setEditingId(null);
+    const next = editValue;
+    try {
+      await renameThread(token, thread.thread_id, next);
+      setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, title: next } : t)));
+      setEditingId(null);
+    } catch (err) {
+      // Surface the error and drop the user out of edit mode so they aren't stuck.
+      setError(err.message || "Failed to rename conversation.");
+      setEditingId(null);
+    }
   }
 
   return (
@@ -63,8 +78,13 @@ function ThreadList() {
           </Button>
         </div>
 
-        {loading && <p className="font-mono text-sm text-muted loading-breathe">loading...</p>}
-        {!loading && threads.length === 0 && (
+        {loading && <p className="font-mono text-sm text-muted loading-breathe" aria-live="polite">loading...</p>}
+        {error && (
+          <p role="alert" aria-live="polite" className="font-mono text-sm text-danger mb-3">
+            // {error}
+          </p>
+        )}
+        {!loading && !error && threads.length === 0 && (
           <p className="font-mono text-sm text-muted">// no conversations yet — start one above</p>
         )}
 
@@ -82,22 +102,25 @@ function ThreadList() {
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && saveRename(t)}
+                    maxLength={60}
+                    aria-label="Rename conversation"
                     className="bg-paper border border-rule rounded px-2 py-1 text-sm text-ink flex-1 min-w-0"
                   />
-                  <Button variant="link" size="link" onClick={() => saveRename(t)} className="text-success shrink-0">
+                  <Button variant="link" size="link" onClick={() => saveRename(t)} aria-label="Save rename" className="text-success shrink-0">
                     save
                   </Button>
-                  <Button variant="link" size="link" onClick={() => setEditingId(null)} className="text-muted shrink-0">
+                  <Button variant="link" size="link" onClick={() => setEditingId(null)} aria-label="Cancel rename" className="text-muted shrink-0">
                     cancel
                   </Button>
                 </div>
               ) : (
                 <>
-                  <span className="font-mono text-sm text-ink truncate min-w-0 flex-1">{t.title}</span>
+                  <span className="font-mono text-sm text-ink truncate min-w-0 flex-1" title={t.title}>{t.title}</span>
                   <Button
                     variant="link"
                     size="link"
                     onClick={(e) => startEditing(e, t)}
+                    aria-label={`Rename "${t.title}"`}
                     className="text-muted hover:text-accent shrink-0"
                   >
                     ✎ rename

@@ -21,6 +21,9 @@ function Ingest() {
   const [state, setState] = useState("");
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
+  // Synchronous re-entry guard: set on click before await so a fast double-click
+  // can't fire the request twice while the server response is still in flight.
+  const [submitting, setSubmitting] = useState(false);
   const pollTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -34,7 +37,12 @@ function Ingest() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (submitting || (state && state !== "FAILURE")) return;
     setError("");
+    setSubmitting(true);
+    // Reset the timeline so a corrected retry doesn't append onto the failed attempt.
+    setHistory([]);
+    setState("");
     try {
       const result = await startIngest(token, githubUrl);
       setJobId(result.job_id);
@@ -42,6 +50,8 @@ function Ingest() {
       poll(result.job_id, result.repo_id);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -75,30 +85,32 @@ function Ingest() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="font-mono text-xs uppercase tracking-wide text-muted">
+            <label htmlFor="github-url" className="font-mono text-xs uppercase tracking-wide text-muted">
               github url
             </label>
             <input
+              id="github-url"
               type="text"
               placeholder="https://github.com/owner/repo.git"
               value={githubUrl}
               onChange={(e) => setGithubUrl(e.target.value)}
-              disabled={locked}
+              disabled={locked || submitting}
+              autoComplete="off"
               className="mt-1 w-full bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent-strong disabled:opacity-50"
             />
           </div>
-          <Button type="submit" disabled={locked} className="w-full">
-            {state && state !== "FAILURE" ? state.toLowerCase() + "..." : "ingest"}
+          <Button type="submit" disabled={locked || submitting} className="w-full" aria-label="Start ingestion">
+            {state && state !== "FAILURE" ? state.toLowerCase() + "..." : (submitting ? "starting..." : "ingest")}
           </Button>
         </form>
 
         {history.length > 0 && (
-          <div className="mt-6">
+          <div className="mt-6" aria-live="polite">
             {history.map((s, i) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="flex flex-col items-center">
-                  <div className={`w-2 h-2 rounded-full mt-1.5 ${STATE_COLOR[s] || "bg-muted"}`} />
-                  {i !== history.length - 1 && <div className="w-px flex-1 bg-rule my-1" />}
+                  <div className={`w-2 h-2 rounded-full mt-1.5 ${STATE_COLOR[s] || "bg-muted"}`} aria-hidden="true" />
+                  {i !== history.length - 1 && <div className="w-px flex-1 bg-rule my-1" aria-hidden="true" />}
                 </div>
                 <p className="font-mono text-sm text-ink pb-3">{s}</p>
               </div>
@@ -106,7 +118,11 @@ function Ingest() {
           </div>
         )}
 
-        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+        {error && (
+          <p role="alert" aria-live="polite" className="mt-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { streamChat, autoTitleThread } from "../lib/api";
+import { streamChat, autoTitleThread, getThreadMessages } from "../lib/api";
 import { Button } from "../components/ui/button";
 import MessageList from "../components/MessageList";
 import PromptBar from "../components/PromptBar";
@@ -16,6 +16,7 @@ function Chat() {
 
   const [messages, setMessages] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -24,17 +25,20 @@ function Chat() {
 
   useEffect(() => {
     setLoadingHistory(true);
-    fetch(`${import.meta.env.VITE_API_BASE}/threads/${threadId}/messages`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
+    setHistoryError("");
+    getThreadMessages(token, threadId)
       .then((data) => {
         setMessages(data);
         if (data.length && data[0].title) setThreadTitle(data[0].title);
       })
-      .catch(() => setMessages([]))
+      .catch((err) => {
+        setHistoryError(err.message || "Failed to load conversation history.");
+      })
       .finally(() => setLoadingHistory(false));
   }, [threadId]);
+
+  // True only for the last message, which is the in-flight agent bubble.
+  const streamingIndex = sending ? messages.length - 1 : -1;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -86,10 +90,10 @@ function Chat() {
             <PromptBar threadTitle={threadTitle ?? undefined} />
           </div>
 
-          <MessageList messages={messages} loadingHistory={loadingHistory} />
+          <MessageList messages={messages} loadingHistory={loadingHistory} streamingIndex={streamingIndex} historyError={historyError} />
 
           <form onSubmit={handleSubmit} className="px-6 py-4 border-t border-rule flex gap-2 items-center">
-            <span className="font-mono text-sm text-accent">{">"}</span>
+            <span className="font-mono text-sm text-accent" aria-hidden="true">{">"}</span>
             <input
               type="text"
               placeholder="ask something about the repo..."
@@ -98,12 +102,16 @@ function Chat() {
               disabled={sending}
               className="flex-1 bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent-strong disabled:opacity-50"
             />
-            <Button type="submit" disabled={sending}>
-              send
+            <Button type="submit" disabled={sending} aria-label="Send message">
+              {sending ? "sending..." : "send"}
             </Button>
           </form>
 
-          {error && <p className="px-6 pb-3 text-sm text-danger">{error}</p>}
+          {error && (
+            <p role="alert" aria-live="polite" className="px-6 pb-3 text-sm text-danger">
+              {error}
+            </p>
+          )}
         </div>
 
         <Button

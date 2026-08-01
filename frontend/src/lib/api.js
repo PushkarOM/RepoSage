@@ -8,7 +8,13 @@ function redirectToLogin() {
 async function handleResponse(response) {
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.detail || `Request failed: ${response.status}`);
+    // FastAPI 422 sends detail as an array of {loc, msg, type} objects —
+    // collapse to a readable string so it never reaches the UI as "[object Object]".
+    let detail = errorBody.detail;
+    if (Array.isArray(detail)) {
+      detail = detail.map((e) => e.msg).join("; ");
+    }
+    throw new Error(detail || `Request failed: ${response.status}`);
   }
   return response.json();
 }
@@ -134,6 +140,13 @@ export async function autoTitleThread(token, threadId, message) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ message }),
+  });
+  return handleResponse(response);
+}
+
+export async function getThreadMessages(token, threadId) {
+  const response = await authFetch(`${API_BASE}/threads/${threadId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
   return handleResponse(response);
 }

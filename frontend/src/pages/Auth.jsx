@@ -45,24 +45,28 @@ function Auth() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="font-mono text-xs uppercase tracking-wide text-muted">
+            <label htmlFor="username" className="font-mono text-xs uppercase tracking-wide text-muted">
               username
             </label>
             <input
+              id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
               className="mt-1 w-full bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-strong"
             />
           </div>
           <div>
-            <label className="font-mono text-xs uppercase tracking-wide text-muted">
+            <label htmlFor="password" className="font-mono text-xs uppercase tracking-wide text-muted">
               password
             </label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
               className="mt-1 w-full bg-paper border border-rule rounded-md px-3 py-2 text-ink font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-strong"
             />
           </div>
@@ -81,8 +85,16 @@ function Auth() {
           {mode === "login" ? "need an account? register" : "have an account? login"}
         </Button>
 
-        {notice && <p className="mt-3 text-sm text-success">{notice}</p>}
-        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+        {notice && (
+          <p role="status" aria-live="polite" className="mt-3 text-sm text-success">
+            {notice}
+          </p>
+        )}
+        {error && (
+          <p role="alert" aria-live="polite" className="mt-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

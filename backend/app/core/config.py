@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     embedding_provider: str = "local"
     embedding_model_local: str = "sentence-transformers/all-MiniLM-L6-v2"
     
-    llm_provider: str = "groq"  # "groq" or "gemini"
+    llm_provider: str = "gemini"  # "groq" or "gemini"
 
     google_api_key: str | None = None
     google_model_name: str = "gemini-2.5-flash-lite"

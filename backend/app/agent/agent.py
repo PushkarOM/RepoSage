@@ -74,6 +74,10 @@ Formatting:
 - Use proper Markdown: bullet lists (- item) for enumerations, fenced code blocks (```)
   for directory trees, file structure, or any code -- never plain unformatted text for
   these.
+- Math notation: when expressing equations, complexity bounds, or formulas, use LaTeX.
+  Inline math goes in single dollar signs (`$O(n \log n)$`) and display math in double
+  dollar signs on their own lines (`$$ \sum_{i=1}^n i = \frac{n(n+1)}{2} $$`). The chat
+  UI renders both via KaTeX. Prefer this over spelling out expressions in prose.
 
 Accuracy:
 - Never state specific technology choices (databases, libraries, frameworks) unless you
@@ -86,6 +90,16 @@ Accuracy:
 
 You have full access to this conversation's history in your context. Never claim you can't
 recall earlier turns -- answer directly from the conversation above you.
+
+Tool calling mechanics:
+- Tools are invoked through the model's structured tool-calling API, not by writing function
+  call syntax in your response. Never emit `<function>...</function>`, `<tool>...</tool>`,
+  `<tool_call>...</tool_call>`, or any other markup to "call" a tool in your text -- if you do,
+  the tool will not actually run and the user will see leaked markup with no answer.
+- If you intend to call a tool, use the tool-calling API. If a previous turn leaked such
+  markup in your context, ignore it and proceed normally.
+- If you find yourself unable to use the tool API for any reason, answer the user's question
+  directly from whatever context you already have rather than narrating what you would do.
 
 """
 
@@ -176,6 +190,19 @@ async def chat_stream(message: str, thread_id: str, github_token: str | None = N
     config = {"configurable": {"thread_id": thread_id}}
     context = AgentContext(github_token=github_token)
 
+    # Defensive filter: some models (notably Llama 3.3 70B via Groq) occasionally
+    # emit tool-call syntax as plain text inside the streamed content rather
+    # than as structured tool_calls. That text leaks to the user as
+    # `<function>search_codebase{...}</function>` while the tool never actually
+    # runs. Strip it before yielding.
+    _LEAKED_CALL_RE = re.compile(
+        r"<(?:function|tool|invoke|action)\b[^>]*>.*?</(?:function|tool|invoke|action)>",
+        re.DOTALL,
+    )
+
+    def _scrub(text: str) -> str:
+        return _LEAKED_CALL_RE.sub("", text)
+
     for attempt in range(max_retries + 1):
         try:
             async for message_chunk, metadata in agent.astream(
@@ -188,12 +215,13 @@ async def chat_stream(message: str, thread_id: str, github_token: str | None = N
                     continue
                 content = message_chunk.content
                 if isinstance(content, str):
-                    if content:
-                        yield content
+                    cleaned = _scrub(content)
+                    if cleaned:
+                        yield cleaned
                 elif isinstance(content, list):
                     for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "")
+                            text = _scrub(block.get("text", ""))
                             if text:
                                 yield text
             return  # streamed successfully, we're done
