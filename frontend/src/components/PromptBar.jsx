@@ -30,7 +30,7 @@ function PromptBar({ threadTitle }) {
   return (
     <div className="font-mono text-xs text-muted flex items-center gap-1.5 min-w-0">
       <span className="text-accent shrink-0" aria-hidden="true">$</span>
-      <span className="shrink-0">reposage</span>
+      <span className="font-bold text-ink shrink-0">reposage</span>
       {copy && (
         <>
           <span className="text-muted/60 shrink-0" aria-hidden="true">—</span>

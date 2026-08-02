@@ -64,9 +64,9 @@ the old job_id. Fix is architectural, not a patch:
 ## Later — UI/UX & code polish pass
 
 Deliberately deferred until the feature surface stops changing shape:
-- [ ] Frontend UI/UX overhaul, animation library (e.g. React Bits)
-- [ ] Consolidate repeated button markup into shadcn's Button component
-- [ ] Streaming polish (fade-in per chunk, blinking cursor)
+- [x] Frontend UI/UX overhaul, animation library (e.g. React Bits)
+- [x] Consolidate repeated button markup into shadcn's Button component
+- [x] Streaming polish (fade-in per chunk, blinking cursor)
 
 ## Infra decisions log
 

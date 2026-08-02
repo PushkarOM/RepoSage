@@ -14,6 +14,7 @@ const buttonVariants = cva(
       size: {
         default: "h-9 px-4 text-sm",
         sm: "h-7 px-3 text-xs",
+        lg: "h-11 px-6 text-base",
         link: "h-auto px-0 text-xs bg-transparent border-transparent hover:text-accent",
       },
     },
