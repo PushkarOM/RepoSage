@@ -6,7 +6,7 @@ CODE_EXTENSIONS = {".py": Language.PYTHON, ".js": Language.JS, ".ts": Language.T
 DOC_EXTENSIONS = {".md", ".rst", ".txt"}
 IGNORE_DIRS = {".git", "node_modules", "__pycache__", "venv", ".venv"}
 
-# --- Near-duplicate chunk dedup (Phase 4 #4) ---
+# Near-duplicate chunk dedup 
 # Two thresholds for shingled-hash fingerprint dedup. Drop a chunk if
 # at least DEDUP_MIN_DUP_RATIO of its 5-shingles match shingles seen
 # earlier in the same file. Per-file only -- cross-file similarity

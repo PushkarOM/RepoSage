@@ -22,9 +22,6 @@ function App() {
   // Mounts the theme hook so the class is applied + persisted on first load
   useTheme();
 
-  // The landing route renders its own PromptBar inside the hero. To avoid
-  // a duplicate, the global header on `/` is collapsed — the theme/logout
-  // controls are surfaced by the Landing page itself.
   const onLanding = pathname === "/";
 
   return (

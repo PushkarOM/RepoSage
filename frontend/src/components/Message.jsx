@@ -6,31 +6,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
 
-/**
- * Streaming vs. animating
- * ------------------------
- * `streaming` (prop) = "the network/fetch for this message is still open."
- * `isAnimating` (state) = "the typewriter still has queued characters to show."
- *
- * These are NOT the same clock, and conflating them causes two distinct bugs:
- *
- * 1. If we stop the typewriter the instant `streaming` flips to false, any
- *    reply longer than a few lines gets cut off and dumped in full, because
- *    the network finishes delivering tokens well before the typewriter
- *    (which is throttled to ~22 words/sec) has caught up.
- *
- * 2. If we seed the "already streamed" position at 0 for every assistant
- *    message regardless of `streaming`, then a HISTORICAL message — loaded
- *    on page refresh with `streaming={false}` and its full text already
- *    present — looks to the ingest effect exactly like a brand-new stream
- *    starting from scratch, and it gets typed out too.
- *
- * The fix for both: `isAnimating` is derived state that starts true only
- * when a message mounts WHILE still streaming, and it only turns false once
- * the pending queue is actually empty AND the source has stopped sending.
- * A message that mounts already-complete never enters the animating state
- * at all.
- */
+
 const WORD_TICK_MS = 45;            // ~22 words/sec
 const LONG_WORD_THRESHOLD = 40;     // a "word" longer than this is char-split
 
@@ -39,7 +15,7 @@ function Message({ who, text, streaming = false }) {
   const prefix = isUser ? ">" : "$";
   const prefixClass = isUser ? "text-accent" : "text-success";
 
-  // ---- Initial state depends on whether this message is ALREADY finished
+  // Initial state depends on whether this message is ALREADY finished
   // at mount time, not just on whether it's from the assistant. ----
   const [displayedText, setDisplayedText] = useState(() => {
     if (isUser) return text;
@@ -107,7 +83,7 @@ function Message({ who, text, streaming = false }) {
   const emptyAgentBubble = isAnimating && !isUser && displayedText.length === 0;
   const showCursor = isAnimating && !isUser && pendingRef.current.length > 0;
 
-  // ---- Render: plain text while animating, full markdown once settled ----
+  // Render: plain text while animating, full markdown once settled
   // NOTE ON THE `key` PROPS: both branches render a <div> at the same tree
   // position. Without distinct keys, React reconciles them as the SAME DOM
   // node — it just mutates its className/children in one commit instead of
