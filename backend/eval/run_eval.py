@@ -2,6 +2,9 @@
 Offline retrieval eval. Run manually against an already-ingested repo:
 
     python -m eval.run_eval <repo_id>
+    python -m eval.run_eval <repo_id> --limit 3
+    python -m eval.run_eval <repo_id> --only hybrid
+    python -m eval.run_eval <repo_id> --limit 3 --only hybrid
 
 Not part of pytest/CI -- needs live Chroma data and a real LLM call
 (multi-query expansion), and measures a quality score that can drift
@@ -11,6 +14,7 @@ Compares multiple retrievers side by side so we can see the impact of
 each Phase 4 change (hybrid search, entity dedup, new tools) on the
 same benchmark rather than eyeballing one query at a time.
 """
+import argparse
 import asyncio
 import json
 import sys
@@ -68,7 +72,7 @@ RETRIEVERS: dict[str, Callable] = {
 }
 
 
-async def _score_retriever(name: str, retriever: Callable, repo_id: str) -> dict:
+async def _score_retriever(name: str, retriever: Callable, repo_id: str, cases: list[dict]) -> dict:
     """
     Runs every test case through one retriever and returns aggregate
     metrics. Per-case detail is also kept so the printed report can show
@@ -79,7 +83,7 @@ async def _score_retriever(name: str, retriever: Callable, repo_id: str) -> dict
     latencies = []
     per_case = []
 
-    for case in TEST_CASES:
+    for case in cases:
         start = time.perf_counter()
         results = await retriever(case["query"], 5, repo_id)
         elapsed = time.perf_counter() - start
@@ -107,8 +111,8 @@ async def _score_retriever(name: str, retriever: Callable, repo_id: str) -> dict
 
     return {
         "name": name,
-        "mrr": round(mrr_sum / len(TEST_CASES), 4),
-        "recall_at_5": round(recall_hits / len(TEST_CASES), 4),
+        "mrr": round(mrr_sum / len(cases), 4),
+        "recall_at_5": round(recall_hits / len(cases), 4),
         "avg_latency_ms": int(sum(latencies) / len(latencies) * 1000),
         "per_case": per_case,
     }
@@ -146,7 +150,7 @@ def _print_report(scores: list[dict]) -> None:
         print()
 
 
-def _write_artifact(repo_id: str, scores: list[dict]) -> None:
+def _write_artifact(repo_id: str, scores: list[dict], num_cases: int) -> None:
     """
     Persists the latest run so scores survive across sessions -- the next
     time we run the eval we can diff against this without git archaeology.
@@ -156,7 +160,7 @@ def _write_artifact(repo_id: str, scores: list[dict]) -> None:
     payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "repo_id": repo_id,
-        "num_cases": len(TEST_CASES),
+        "num_cases": num_cases,
         "latency_budget_ms": LATENCY_BUDGET_MS,
         "retrievers": {
             s["name"]: {
@@ -198,23 +202,53 @@ async def _warmup(retrievers: dict[str, Callable], repo_id: str) -> None:
             pass
 
 
-async def run(repo_id: str) -> None:
-    print(f"Running {len(TEST_CASES)} eval cases against repo_id={repo_id}\n")
-    print("Warming up retrievers (cold-start costs discarded)...", end="", flush=True)
-    await _warmup(RETRIEVERS, repo_id)
+async def run(repo_id: str, cases: list[dict] = TEST_CASES, retrievers: dict[str, Callable] | None = None) -> None:
+    """
+    Run the eval. cases and retrievers default to the full set, so calling
+    run(repo_id) with no other args gives the back-compat behavior the
+    README documents. --limit and --only in __main__ slice these defaults.
+    """
+    if retrievers is None:
+        retrievers = RETRIEVERS
+
+    print(f"Running {len(cases)} eval cases against repo_id={repo_id}\n")
+    print(f"Warming up {len(retrievers)} retriever(s) (cold-start costs discarded)...", end="", flush=True)
+    await _warmup(retrievers, repo_id)
     print(" done.\n")
     scores = []
-    for name, retriever in RETRIEVERS.items():
+    for name, retriever in retrievers.items():
         print(f"  running {name}...", end="", flush=True)
-        s = await _score_retriever(name, retriever, repo_id)
+        s = await _score_retriever(name, retriever, repo_id, cases)
         print(f"  mrr={s['mrr']:.3f} r@5={s['recall_at_5']:.1%} {s['avg_latency_ms']}ms")
         scores.append(s)
     _print_report(scores)
-    _write_artifact(repo_id, scores)
+    _write_artifact(repo_id, scores, num_cases=len(cases))
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="RepoSage retrieval eval. Compares vector_only, multi_query, "
+                    "and hybrid retrievers head-to-head against the test cases in "
+                    "eval/test_cases.py.",
+    )
+    parser.add_argument("repo_id", help="The ingested repo_id to evaluate against")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Run only the first N test cases (default: all)",
+    )
+    parser.add_argument(
+        "--only",
+        choices=list(RETRIEVERS.keys()),
+        default=None,
+        help="Run only one retriever (default: all three)",
+    )
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python -m eval.run_eval <repo_id>")
-        sys.exit(1)
-    asyncio.run(run(sys.argv[1]))
+    args = _parse_args(sys.argv[1:])
+    cases = TEST_CASES if args.limit is None else TEST_CASES[: args.limit]
+    retrievers = RETRIEVERS if args.only is None else {args.only: RETRIEVERS[args.only]}
+    asyncio.run(run(args.repo_id, cases=cases, retrievers=retrievers))

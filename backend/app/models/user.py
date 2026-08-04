@@ -11,3 +11,4 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     github_access_token = Column(String, nullable=True)
+    refresh_token_hash = Column(String, nullable=True)

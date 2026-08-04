@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
+    # Separate secret for refresh tokens so a leaked access-token secret
+    # can't be used to forge refresh tokens (and vice versa).
+    jwt_refresh_secret_key: str = "dev-refresh-secret-change-me"
+    jwt_refresh_expire_minutes: int = 60 * 24 * 7   # 7 days
     demo_username: str = "admin"
     demo_password_hash: str = ""
 

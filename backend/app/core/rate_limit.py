@@ -3,6 +3,24 @@ from app.api.auth import get_current_user
 from app.core.config import settings
 
 
+def _format_ttl(ttl: int) -> str:
+    """
+    Render a Redis-TTL seconds count into something a human reads at a glance.
+    The raw "86400 seconds" looks like a stack trace in a UI; "tomorrow at
+    00:00 UTC" doesn't. The endpoint currently uses 24h windows so the
+    "tomorrow at 00:00 UTC" branch is the one that actually fires in prod,
+    but the shorter branches are kept for the wide-window case and for
+    tests that mock a short TTL.
+    """
+    if ttl < 60:
+        return f"{ttl} seconds"
+    if ttl < 3600:
+        return f"{ttl // 60} minutes"
+    if ttl < 86400:
+        return f"{ttl // 3600} hours"
+    return "tomorrow at 00:00 UTC"
+
+
 def rate_limit(key_prefix: str, limit_attr: str, window_seconds: int):
     """
     Enforces getattr(settings, limit_attr) requests per window_seconds,
@@ -27,6 +45,6 @@ def rate_limit(key_prefix: str, limit_attr: str, window_seconds: int):
             ttl = await r.ttl(key)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Rate limit exceeded for this action. Try again in {ttl} seconds.",
+                detail=f"Rate limit exceeded for this action. Try again in {_format_ttl(ttl)}.",
             )
     return dependency
