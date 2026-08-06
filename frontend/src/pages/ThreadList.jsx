@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { Check, X } from "lucide-react";
+import { useToast } from "../lib/toast.jsx";
 import { listThreads, createThread, renameThread } from "../lib/api";
 import { Button } from "../components/ui/button";
 
 function ThreadList() {
-  const { token } = useAuth();
   const { owner, name } = useParams();
   const repoId = `${owner}/${name}`;
   const navigate = useNavigate();
+  const { pushToast } = useToast();
 
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +20,7 @@ function ThreadList() {
 
   useEffect(() => {
     setError("");
-    listThreads(token, repoId)
+    listThreads(repoId)
       .then(setThreads)
       .catch((err) => setError(err.message || "Failed to load conversations."))
       .finally(() => setLoading(false));
@@ -29,7 +30,7 @@ function ThreadList() {
     setCreating(true);
     setError("");
     try {
-      const thread = await createThread(token, repoId);
+      const thread = await createThread(repoId);
       navigate(`/repos/${repoId}/threads/${thread.thread_id}`, { state: { isNew: true } });
     } catch (err) {
       setError(err.message || "Failed to start a new conversation.");
@@ -47,13 +48,14 @@ function ThreadList() {
   async function saveRename(thread) {
     const next = editValue;
     try {
-      await renameThread(token, thread.thread_id, next);
+      await renameThread(thread.thread_id, next);
       setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, title: next } : t)));
       setEditingId(null);
+      pushToast({ kind: "success", message: "Conversation renamed." });
     } catch (err) {
-      // Surface the error and drop the user out of edit mode so they aren't stuck.
-      setError(err.message || "Failed to rename conversation.");
+      // Drop the user out of edit mode so they aren't stuck, then surface the error.
       setEditingId(null);
+      pushToast({ kind: "error", message: err.message || "Failed to rename conversation." });
     }
   }
 
@@ -107,10 +109,10 @@ function ThreadList() {
                     className="bg-paper border border-rule rounded px-2 py-1 text-sm text-ink flex-1 min-w-0"
                   />
                   <Button variant="link" size="link" onClick={() => saveRename(t)} aria-label="Save rename" className="text-success shrink-0">
-                    save
+                    <Check size={16} aria-hidden="true" />
                   </Button>
                   <Button variant="link" size="link" onClick={() => setEditingId(null)} aria-label="Cancel rename" className="text-muted shrink-0">
-                    cancel
+                    <X size={16} aria-hidden="true" />
                   </Button>
                 </div>
               ) : (

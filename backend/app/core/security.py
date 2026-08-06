@@ -64,3 +64,46 @@ def hash_password(plain_password: str) -> str:
         raise ValueError("Password too long (max 72 bytes)")
     hashed = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
     return hashed.decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Cookie helpers
+# ---------------------------------------------------------------------------
+# All keys + flags come from settings so dev (Secure=False) and prod
+# (Secure=True via env) share the same code path. Starlette's
+# `set_cookie` / `delete_cookie` accept these as kwargs.
+
+
+def _base_cookie_kwargs() -> dict:
+    """Settings that go on every Set-Cookie and Delete-Cookie."""
+    return {
+        "secure": settings.cookie_secure,
+        "httponly": True,
+        "samesite": settings.cookie_samesite,
+        "path": settings.cookie_path,
+        "domain": settings.cookie_domain,
+    }
+
+
+def access_cookie_settings() -> dict:
+    """Settings for the access-token cookie (short TTL)."""
+    return {
+        **_base_cookie_kwargs(),
+        "key": "reposage_token",
+        "max_age": settings.jwt_expire_minutes * 60,
+    }
+
+
+def refresh_cookie_settings() -> dict:
+    """Settings for the refresh-token cookie (long TTL)."""
+    return {
+        **_base_cookie_kwargs(),
+        "key": "reposage_refresh",
+        "max_age": settings.jwt_refresh_expire_minutes * 60,
+    }
+
+
+def clear_cookie_kwargs(key: str) -> dict:
+    """Settings that delete a cookie (Max-Age=0). Key is passed in so the
+    same helper handles both reposage_token and reposage_refresh."""
+    return {**_base_cookie_kwargs(), "key": key}

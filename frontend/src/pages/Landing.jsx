@@ -55,7 +55,7 @@ function TerminalDemo() {
   return (
     <div>
       <p className="font-mono text-xs text-muted mb-2">
-        // example conversation — paste a real repo above to try it yourself
+        // example conversation — click login to try it yourself
       </p>
       <div className="w-full bg-elevated border border-rule rounded-lg shadow-2xl overflow-hidden">
         <div className="flex items-center gap-1.5 px-4 py-3 border-b border-rule">
@@ -185,11 +185,26 @@ function ContributeSection() {
 }
 
 function Landing() {
-  const { token } = useAuth();
+  const { isAuthenticated, authChecked } = useAuth();
   const navigate = useNavigate();
 
-  const cta = token ? "go to dashboard" : "login";
-  const ctaTarget = token ? "/dashboard" : "/login";
+  // Reflect the resolved auth state in both the CTA copy and its target:
+  //   - logged in         -> "go to dashboard" -> /dashboard
+  //   - logged out        -> "login"           -> /login
+  //   - still checking    -> "enter"           -> /dashboard (RequireAuth
+  //     bounces an unauthed visitor to /login; this keeps the CTA stable
+  //     during the silent /refresh so an authed user doesn't see the
+  //     label flicker from "login" -> "go to dashboard")
+  const cta = !authChecked
+    ? "enter"
+    : isAuthenticated
+      ? "go to dashboard"
+      : "login";
+  const ctaTarget = !authChecked
+    ? "/dashboard"
+    : isAuthenticated
+      ? "/dashboard"
+      : "/login";
 
   return (
     <div className="bg-paper">

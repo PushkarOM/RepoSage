@@ -33,9 +33,9 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
     that naturally.
     """
     client.post("/register", json={"username": "dana", "password": "testpass123"})
-    login_resp = client.post("/login", data={"username": "dana", "password": "testpass123"})
-    token = login_resp.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    # Login sets the httpOnly cookies on the TestClient jar; subsequent
+    # requests attach them automatically. No Authorization header needed.
+    client.post("/login", data={"username": "dana", "password": "testpass123"})
 
     call_count = {"n": 0}
 
@@ -50,7 +50,7 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
     )
 
     url = "https://github.com/owner/repo.git"
-    r1 = client.post("/ingest", json={"github_url": url}, headers=headers)
+    r1 = client.post("/ingest", json={"github_url": url})
     assert r1.status_code == 200
 
     # No real worker runs in tests -- simulate the first ingestion completing
@@ -58,10 +58,10 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
     repo_row.status = "success"
     db_session.commit()
 
-    r2 = client.post("/ingest", json={"github_url": url}, headers=headers)
+    r2 = client.post("/ingest", json={"github_url": url})
     assert r2.status_code == 200
     assert r1.json()["repo_id"] == r2.json()["repo_id"]
 
-    repos_resp = client.get("/repos", headers=headers)
+    repos_resp = client.get("/repos")
     matching = [r for r in repos_resp.json() if r["repo_id"] == r1.json()["repo_id"]]
     assert len(matching) == 1

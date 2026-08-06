@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
-    # Separate secret for refresh tokens so a leaked access-token secret
-    # can't be used to forge refresh tokens (and vice versa).
+    
     jwt_refresh_secret_key: str = "dev-refresh-secret-change-me"
     jwt_refresh_expire_minutes: int = 60 * 24 * 7   # 7 days
     demo_username: str = "admin"
@@ -32,6 +31,25 @@ class Settings(BaseSettings):
 
     rate_limit_chat_per_day: int = 50
     rate_limit_ingest_per_day: int = 10
+
+    # Auth cookies. Set `cookie_secure=true` in prod (or via env
+    # COOKIE_SECURE=true) -- browsers refuse to set Secure cookies on
+    # plain HTTP, so the default is False for dev. SameSite=Lax is the
+    # entire CSRF defense (browsers don't send Lax cookies on cross-
+    # origin POST/PUT/DELETE) -- no separate CSRF token needed.
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"
+    cookie_domain: str | None = None      # None = host-only (right default)
+    cookie_path: str = "/"
+
+    # CORS — explicit origins required because allow_credentials=True
+    # forbids "*". In dev: Vite proxy on 5173 + raw backend on 8000.
+    # In prod the frontend and backend are same-origin, so CORS rarely
+    # matters, but the list still has to be sane for direct probes.
+    cors_allowed_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:8000",
+    ]
 
     gh_client_id: str | None = None
     gh_client_secret: str | None = None

@@ -13,7 +13,10 @@ def test_login_with_correct_credentials_succeeds(client):
     client.post("/register", json={"username": "bob", "password": "testpass123"})
     response = client.post("/login", data={"username": "bob", "password": "testpass123"})
     assert response.status_code == 200
-    assert "access_token" in response.json()
+    # Tokens now ride in httpOnly cookies, not the response body --
+    # the body is just an acknowledgment ({message, username}).
+    assert "reposage_token" in response.cookies
+    assert "reposage_refresh" in response.cookies
 
 
 def test_login_with_wrong_password_fails(client):

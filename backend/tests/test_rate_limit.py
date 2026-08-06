@@ -19,9 +19,9 @@ def test_chat_rate_limit_enforced(client, monkeypatch):
     asyncio.run(_clear_rate_limit_key("chat", "erin"))
 
     client.post("/register", json={"username": "erin", "password": "testpass123"})
-    login_resp = client.post("/login", data={"username": "erin", "password": "testpass123"})
-    token = login_resp.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    # Login sets the httpOnly cookies on the TestClient jar; subsequent
+    # requests attach them automatically. No Authorization header needed.
+    client.post("/login", data={"username": "erin", "password": "testpass123"})
 
     monkeypatch.setattr("app.core.config.settings.rate_limit_chat_per_day", 2)
     # Patch where the name is used (routes.py's own `agent_chat` reference),
@@ -31,9 +31,9 @@ def test_chat_rate_limit_enforced(client, monkeypatch):
     monkeypatch.setattr("app.api.routes.agent_chat", _fake_chat)
 
     body = {"repo_id": "owner/repo", "message": "hi"}
-    r1 = client.post("/chat", json=body, headers=headers)
-    r2 = client.post("/chat", json=body, headers=headers)
-    r3 = client.post("/chat", json=body, headers=headers)
+    r1 = client.post("/chat", json=body)
+    r2 = client.post("/chat", json=body)
+    r3 = client.post("/chat", json=body)
 
     assert r1.status_code == 200
     assert r2.status_code == 200

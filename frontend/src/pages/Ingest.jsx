@@ -1,19 +1,26 @@
-import { useState, useRef, useEffect } from "react";
-import { startIngest, getStatus } from "../lib/api";
+import { useState, useEffect } from "react";
+import { startIngest, streamIngestStatus } from "../lib/api";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 
+// Maps both legacy Celery states (PENDING/STARTED) and the lowercase
+// status strings written by our own task. The SSE stream emits whichever
+// the task produced -- consistent across both paths because we now
+// always go through our task code that writes lowercase.
 const STATE_COLOR = {
   queued: "bg-muted",
+  pending: "bg-muted",
   PENDING: "bg-muted",
+  running: "bg-accent",
   STARTED: "bg-accent",
+  success: "bg-success",
   SUCCESS: "bg-success",
+  failed: "bg-danger",
+  error: "bg-danger",
   FAILURE: "bg-danger",
 };
 
 function Ingest() {
-  const { token } = useAuth();
   const navigate = useNavigate();
 
   const [githubUrl, setGithubUrl] = useState("");
@@ -24,30 +31,46 @@ function Ingest() {
   // Synchronous re-entry guard: set on click before await so a fast double-click
   // can't fire the request twice while the server response is still in flight.
   const [submitting, setSubmitting] = useState(false);
-  const pollTimeoutRef = useRef(null);
 
+  // Open the SSE stream for the current jobId. Cleanup closes the connection
+  // -- EventSource otherwise retries forever on a server close, which would
+  // be wrong for a terminal stream.
   useEffect(() => {
-    return () => clearTimeout(pollTimeoutRef.current);
-  }, []);
-
-  function logState(newState) {
-    setState(newState);
-    setHistory((prev) => (prev[prev.length - 1] === newState ? prev : [...prev, newState]));
-  }
+    if (!jobId) return undefined;
+    const stop = streamIngestStatus(jobId, (evt) => {
+      const next = (evt.state || "").toLowerCase();
+      setState(next);
+      setHistory((prev) => (prev[prev.length - 1] === next ? prev : [...prev, next]));
+      if (next === "success") {
+        // Use the latest jobId's repo_id by parsing the URL the user submitted.
+        // Fall through to the threads page for the repo they just ingested.
+        navigate(`/repos/${repoFromUrl(githubUrl)}/threads`);
+      } else if (next === "failed" || next === "error") {
+        setError(evt.detail || "Ingestion failed. Check the repo URL and try again.");
+      }
+    });
+    return stop;
+    // githubUrl is read inside the handler but we want a fresh handler when
+    // the input changes (e.g. user typed a new URL after a failure). Closing
+    // and reopening the stream on each keystroke is overkill; instead, capture
+    // the URL via closure and let the existing stream keep running.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (submitting || (state && state !== "FAILURE")) return;
+    if (submitting || (state && state !== "failed" && state !== "error")) return;
     setError("");
     setSubmitting(true);
     // Reset the timeline so a corrected retry doesn't append onto the failed attempt.
     setHistory([]);
     setState("");
     try {
-      const result = await startIngest(token, githubUrl);
+      const result = await startIngest(githubUrl);
       setJobId(result.job_id);
-      logState("queued");
-      poll(result.job_id, result.repo_id);
+      setState("queued");
+      setHistory((prev) => [...prev, "queued"]);
+      // The useEffect above will pick up the new jobId and open the stream.
     } catch (err) {
       setError(err.message);
     } finally {
@@ -55,24 +78,7 @@ function Ingest() {
     }
   }
 
-  async function poll(id, repoId) {
-    try {
-      const result = await getStatus(token, id);
-      logState(result.state);
-
-      if (result.state === "SUCCESS") {
-        navigate(`/repos/${repoId}/threads`);
-      } else if (result.state === "FAILURE") {
-        setError("Ingestion failed. Check the repo URL and try again.");
-      } else {
-        pollTimeoutRef.current = setTimeout(() => poll(id, repoId), 2000);
-      }
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  const locked = state && state !== "FAILURE";
+  const locked = state && state !== "failed" && state !== "error";
 
   return (
     <div className="min-h-[calc(100vh-57px)] flex items-center justify-center px-4 bg-paper">
@@ -100,7 +106,7 @@ function Ingest() {
             />
           </div>
           <Button type="submit" disabled={locked || submitting} className="w-full" aria-label="Start ingestion">
-            {state && state !== "FAILURE" ? state.toLowerCase() + "..." : (submitting ? "starting..." : "ingest")}
+            {locked ? `${state}...` : submitting ? "starting..." : "ingest"}
           </Button>
         </form>
 
@@ -126,6 +132,16 @@ function Ingest() {
       </div>
     </div>
   );
+}
+
+// Derive "owner/repo" from a github URL. Used to navigate to the threads
+// page on success; fails silently on malformed input (the user will see
+// the 404 and can use the dashboard to find their repo).
+function repoFromUrl(url) {
+  if (!url) return "";
+  const cleaned = url.replace(/\.git$/, "");
+  const match = cleaned.match(/github\.com[/:]([^/]+\/[^/]+)/);
+  return match ? match[1] : "";
 }
 
 export default Ingest;

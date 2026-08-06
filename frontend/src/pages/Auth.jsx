@@ -1,35 +1,41 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../lib/toast.jsx";
 import { register, login as loginApi } from "../lib/api";
 import { Button } from "../components/ui/button";
 
 function Auth() {
-  const { login } = useAuth();
+  const { onLoginSuccess } = useAuth();
   const navigate = useNavigate();
+  const { pushToast } = useToast();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError(""); setNotice(""); setLoading(true);
+    setLoading(true);
     try {
       if (mode === "register") {
         await register(username, password);
         setMode("login");
-        setNotice("Registered — now log in.");
+        pushToast({ kind: "success", message: "Account created — log in to continue." });
         return;
       }
-      const result = await loginApi(username, password);
-      login(result.access_token);
+      // /login response carries both cookies via Set-Cookie headers.
+      // We don't need to read the body -- flip isAuthenticated on, then
+      // bounce to /dashboard. No need to re-run /refresh here: the
+      // cookies are brand new, and re-rotating them would race with
+      // the dashhboard's first request.
+      await loginApi(username, password);
+      onLoginSuccess();
+      pushToast({ kind: "success", message: "Logged in." });
       navigate("/dashboard");
     } catch (err) {
-      setError(err.message);
+      pushToast({ kind: "error", message: err.message });
     } finally {
       setLoading(false);
     }
@@ -79,22 +85,11 @@ function Auth() {
         <Button
           variant="link"
           size="link"
-          onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setNotice(""); }}
+          onClick={() => setMode(mode === "login" ? "register" : "login")}
           className="mt-4 text-muted hover:text-accent"
         >
           {mode === "login" ? "need an account? register" : "have an account? login"}
         </Button>
-
-        {notice && (
-          <p role="status" aria-live="polite" className="mt-3 text-sm text-success">
-            {notice}
-          </p>
-        )}
-        {error && (
-          <p role="alert" aria-live="polite" className="mt-3 text-sm text-danger">
-            {error}
-          </p>
-        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, Request, status
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user_from_cookie
 from app.core.config import settings
 
 
@@ -34,7 +34,7 @@ def rate_limit(key_prefix: str, limit_attr: str, window_seconds: int):
     afterward (including a test's monkeypatch) can affect it, since it's
     no longer a live reference to the Settings object at that point.
     """
-    async def dependency(request: Request, current_user: str = Depends(get_current_user)):
+    async def dependency(request: Request, current_user: str = Depends(get_current_user_from_cookie)):
         limit = getattr(settings, limit_attr)
         r = request.app.state.redis
         key = f"ratelimit:{key_prefix}:{current_user}"

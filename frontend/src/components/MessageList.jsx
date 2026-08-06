@@ -67,7 +67,7 @@ function MessageList({ messages, loadingHistory, streamingIndex = -1, historyErr
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="relative flex-1 overflow-y-auto px-6 py-4 min-h-0"
+      className="relative flex-1 overflow-y-auto py-4 min-h-0 scrollbar-thin"
     >
       {/* contentRef wraps everything that can change height — this is what
           the ResizeObserver watches. Keeping space-y-4 here (moved down
@@ -95,7 +95,7 @@ function MessageList({ messages, loadingHistory, streamingIndex = -1, historyErr
           type="button"
           onClick={jumpToLatest}
           aria-label="Jump to latest message"
-          className="sticky bottom-3 left-1/2 -translate-x-1/2 mx-auto block font-mono text-xs text-ink bg-elevated border border-rule rounded-full px-3 py-1.5 shadow-md hover:border-accent hover:text-accent transition focus:outline-none focus:ring-2 focus:ring-accent-strong"
+          className="sticky bottom-3 left-1/2 -translate-x-1/2 mx-auto block font-mono text-xs text-ink bg-elevated border border-rule rounded-full px-3 py-1.5 shadow-md hover:border-accent hover:text-accent cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-accent-strong"
         >
           ↓ jump to latest
         </button>
