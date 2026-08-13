@@ -2,9 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import update
 from pydantic import BaseModel
-import bcrypt
-import hashlib
 
 from app.core.database import get_db
 from app.core.security import (
@@ -22,26 +21,6 @@ from app.models.user import User
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)
-
-
-def _hash_refresh_token(token: str) -> str:
-    """
-    bcrypt refuses inputs > 72 bytes, but a JWT-encoded refresh token
-    routinely runs 200-400 bytes. Hash the JWT with SHA-256 first to
-    reduce it to a fixed 64-byte digest (well within bcrypt's limit),
-    then bcrypt that. This preserves the full entropy of the original
-    token while staying inside bcrypt's constraints.
-    """
-    digest = hashlib.sha256(token.encode("utf-8")).digest()
-    return bcrypt.hashpw(digest, bcrypt.gensalt()).decode("utf-8")
-
-
-def _verify_refresh_token(token: str, stored_hash: str) -> bool:
-    digest = hashlib.sha256(token.encode("utf-8")).digest()
-    try:
-        return bcrypt.checkpw(digest, stored_hash.encode("utf-8"))
-    except ValueError:
-        return False
 
 
 class RegisterRequest(BaseModel):
@@ -120,11 +99,13 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    # Issue both tokens, hash and persist the refresh token. The hash is
-    # what survives a DB compromise -- the raw token never lands on disk.
+    # Issue both tokens. The jti on the refresh JWT is persisted on the
+    # User row -- it's the single source of truth for "which refresh
+    # token is currently valid," and is what /refresh's atomic UPDATE
+    # compares against (see /refresh below for the full rationale).
     access = create_access_token(subject=user.username)
-    refresh = create_refresh_token(subject=user.username)
-    user.refresh_token_hash = _hash_refresh_token(refresh)
+    refresh, jti = create_refresh_token(subject=user.username)
+    user.refresh_token_jti = jti
     db.commit()
 
     # Tokens ride in httpOnly cookies (XSS-immune). Body is a thin ack
@@ -144,8 +125,18 @@ def refresh(request: Request, db: Session = Depends(get_db)):
     surfacing the compromise.
 
     Returns 401 on every failure mode (invalid signature, expired, wrong
-    type claim, revoked, hash mismatch). The frontend treats 401 here as
+    type claim, already-rotated/revoked). The frontend treats 401 here as
     "redirect to /login."
+
+    Race-safety: rotation is a single atomic `UPDATE ... WHERE
+    refresh_token_jti = :presented_jti`. Of N concurrent requests
+    presenting the same starting cookie, exactly one UPDATE matches the
+    row and commits; the rest see rowcount=0 and 401 immediately. This
+    replaces the old SELECT-then-bcrypt-verify-then-UPDATE flow, which
+    had a real gap between the read and the write -- two concurrent
+    callers could both verify, both overwrite, and the loser's cookie
+    would fail later with no error at issue time. See model/user.py for
+    why jti (not a bcrypt hash) is the column of choice here.
     """
     refresh_token = request.cookies.get("reposage_refresh")
     if not refresh_token:
@@ -154,26 +145,35 @@ def refresh(request: Request, db: Session = Depends(get_db)):
             detail="Missing refresh cookie",
         )
 
-    username = decode_refresh_token(refresh_token)
-    if username is None:
+    decoded = decode_refresh_token(refresh_token)
+    if decoded is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
+    username, presented_jti = decoded
 
-    user = db.query(User).filter(User.username == username).first()
-    if not user or not user.refresh_token_hash:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token revoked")
-
-    if not _verify_refresh_token(refresh_token, user.refresh_token_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-
-    # Rotate: a new refresh token supersedes the old one. The old hash is
-    # overwritten -- replay attempts against it will now fail.
     new_access = create_access_token(username)
-    new_refresh = create_refresh_token(username)
-    user.refresh_token_hash = _hash_refresh_token(new_refresh)
+    new_refresh, new_jti = create_refresh_token(username)
+
+    # Atomic compare-and-swap: only rotate if `presented_jti` is STILL the
+    # jti on the row right now. This one UPDATE statement is where the
+    # race gets closed. If another request already rotated this user's
+    # token (concurrently, or just moments ago), rowcount is 0 and we
+    # correctly 401 instead of quietly handing out a cookie that doesn't
+    # match the DB.
+    result = db.execute(
+        update(User)
+        .where(User.username == username, User.refresh_token_jti == presented_jti)
+        .values(refresh_token_jti=new_jti)
+    )
     db.commit()
+
+    if result.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token already used or revoked",
+        )
 
     response = JSONResponse({"message": "ok"})
     response.set_cookie(value=new_access, **access_cookie_settings())
@@ -189,7 +189,7 @@ def logout(
 ):
     """
     Logs the user out across every layer:
-      1. Clears refresh_token_hash on the User row so the JWT is
+      1. Clears refresh_token_jti on the User row so the JWT is
          unredeemable even if a stale cookie is replayed.
       2. Returns a response that deletes both auth cookies (Max-Age=0).
     The access-token JWT itself remains valid until its exp claim --
@@ -198,7 +198,7 @@ def logout(
     """
     user = db.query(User).filter(User.username == username).first()
     if user:
-        user.refresh_token_hash = None
+        user.refresh_token_jti = None
         db.commit()
 
     response = JSONResponse({"message": "logged out"})

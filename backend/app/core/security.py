@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import uuid
 import bcrypt
 from jose import jwt, JWTError
 from app.core.config import settings
@@ -34,28 +35,42 @@ def decode_access_token(token: str) -> str | None:
         return None
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str) -> tuple[str, str]:
     """
     Long-lived JWT used solely to mint new access tokens. Signed with a
     separate secret and carries `type: refresh` so the decoder can reject
     confusion attacks (a refresh token presented where an access token is
     expected, and vice versa).
+
+    Also carries a `jti` (JWT ID) -- a random, non-secret correlation id.
+    Returns (token, jti) so the caller can persist the jti on the User row
+    as the single source of truth for "which refresh token is currently
+    valid." See app/api/auth.py's /refresh for why rotation is keyed off
+    this instead of a bcrypt hash comparison.
     """
+    jti = uuid.uuid4().hex
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_refresh_expire_minutes)
-    payload = {"sub": subject, "exp": expire, "type": "refresh"}
-    return jwt.encode(payload, settings.jwt_refresh_secret_key, algorithm=settings.jwt_algorithm)
+    payload = {"sub": subject, "exp": expire, "type": "refresh", "jti": jti}
+    token = jwt.encode(payload, settings.jwt_refresh_secret_key, algorithm=settings.jwt_algorithm)
+    return token, jti
 
 
-def decode_refresh_token(token: str) -> str | None:
+def decode_refresh_token(token: str) -> tuple[str, str] | None:
     """
-    Returns the subject if the token is a valid refresh token. Mirrors
-    decode_access_token's `type` check.
+    Returns (subject, jti) if the token is a valid, well-formed refresh
+    token. Mirrors decode_access_token's `type` check. Does NOT by itself
+    prove the token is still the "current" one for that user -- the caller
+    still has to check jti against the User row (see /refresh).
     """
     try:
         payload = jwt.decode(token, settings.jwt_refresh_secret_key, algorithms=[settings.jwt_algorithm])
         if payload.get("type") != "refresh":
             return None
-        return payload.get("sub")
+        jti = payload.get("jti")
+        sub = payload.get("sub")
+        if not jti or not sub:
+            return None
+        return sub, jti
     except JWTError:
         return None
 

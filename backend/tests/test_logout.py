@@ -3,11 +3,11 @@ Tests for /logout + /refresh rotation in the cookie-auth flow.
 
 Logout is a hard cut -- it must:
   1. Return 200 with two Set-Cookie headers (Max-Age=0) deleting both cookies.
-  2. Null out User.refresh_token_hash so /refresh can't be redeemed.
+  2. Null out User.refresh_token_jti so /refresh can't be redeemed.
 
 The /refresh rotation must:
   3. Issue a NEW access cookie on every call (old one stops working after rotation).
-  4. Reject a refresh cookie that doesn't match the stored hash.
+  4. Reject a refresh cookie whose jti no longer matches the stored jti.
 """
 
 
