@@ -1,71 +1,98 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useToast } from "../lib/toast.jsx";
 import { listRepos, reingestRepo, getStatus, getGithubStatus, getGithubConnectUrl } from "../lib/api";
 import { Button } from "../components/ui/button";
 
+// Polling budget for the post-submit path (handleReingest). The SSE stream
+// covers the live experience during a fresh ingest; polling is a fallback
+// for reingests fired from this dashboard tab -- capped at 30s so a worker
+// crash can't pin a row to a spinner forever.
+const MAX_REINGEST_POLLS = 15;
+
 function Dashboard() {
-  const { token } = useAuth();
   const navigate = useNavigate();
+  const { pushToast } = useToast();
 
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Set of repo_id strings for reingests kicked off during THIS dashboard
+  // session. A row that's "queued" but not in busyIds is a stale entry
+  // from a prior session -- show a retry CTA instead of a spinner.
   const [busyIds, setBusyIds] = useState(new Set());
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [githubConnected, setGithubConnected] = useState(null);
-  const [justConnected, setJustConnected] = useState(false);
 
   useEffect(() => {
-    getGithubStatus(token)
+    getGithubStatus()
       .then((s) => setGithubConnected(s?.connected ?? false))
       .catch(() => setGithubConnected(false));
 
     if (searchParams.get("github_connected") === "true") {
-      setJustConnected(true);
+      pushToast({ kind: "success", message: "GitHub account connected." });
       setSearchParams({}, { replace: true });
-      const timer = setTimeout(() => setJustConnected(false), 4000);
-      return () => clearTimeout(timer);
     }
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushToast]);
 
   function handleConnectGithub() {
-    window.location.href = getGithubConnectUrl(token);
+    window.location.href = getGithubConnectUrl();
   }
 
-  useEffect(() => {
-    refresh();
-  }, [token]);
-
-  function refresh() {
+  const refresh = useCallback(() => {
     setLoading(true);
     setError("");
-    listRepos(token)
+    listRepos()
       .then((data) => {
         setRepos(data);
-        data.filter((r) => r.status === "queued").forEach((r) => pollStatus(r.job_id, r.repo_id));
+        // Don't auto-poll rows that were already queued on page load.
+        // Those entries belong to a prior session -- their SSE stream is
+        // long dead. The user can click "reingest" if they want to retry.
       })
       .catch((err) => setError(err.message || "Failed to load repos."))
       .finally(() => setLoading(false));
-  }
+  }, []);
 
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Bounded fallback polling for reingests kicked off from this session.
+  // The SSE stream in Ingest.jsx is the primary path; this only runs when
+  // the user clicks "reingest" while already on the dashboard and stays on
+  // the page. Stops after MAX_REINGEST_POLLS regardless of state so a
+  // worker crash can never pin a row to a spinner forever.
   function pollStatus(jobId, repoId) {
     setBusyIds((prev) => new Set(prev).add(repoId));
+    let polls = 0;
 
     async function tick() {
+      polls += 1;
       try {
-        const result = await getStatus(token, jobId);
+        const result = await getStatus(jobId);
         if (result.state === "SUCCESS" || result.state === "FAILURE") {
           const finalStatus = result.state === "SUCCESS" ? "success" : "failed";
           setRepos((prev) => prev.map((r) => (r.repo_id === repoId ? { ...r, status: finalStatus } : r)));
           setBusyIds((prev) => { const next = new Set(prev); next.delete(repoId); return next; });
-        } else {
-          setTimeout(tick, 2000);
+          pushToast({
+            kind: result.state === "SUCCESS" ? "success" : "error",
+            message: result.state === "SUCCESS"
+              ? `${repoId} is ready.`
+              : `Reingest of ${repoId} failed.`,
+          });
+          return;
         }
+        if (polls >= MAX_REINGEST_POLLS) {
+          setBusyIds((prev) => { const next = new Set(prev); next.delete(repoId); return next; });
+          return;
+        }
+        setTimeout(tick, 2000);
       } catch (err) {
-        setError(err.message);
         setBusyIds((prev) => { const next = new Set(prev); next.delete(repoId); return next; });
+        pushToast({ kind: "error", message: err.message || "Status check failed." });
       }
     }
     tick();
@@ -75,11 +102,12 @@ function Dashboard() {
     e.stopPropagation();
     setError("");
     try {
-      const result = await reingestRepo(token, repoId);
+      const result = await reingestRepo(repoId);
       setRepos((prev) => prev.map((r) => (r.repo_id === repoId ? { ...r, status: "queued" } : r)));
+      pushToast({ kind: "info", message: `Reingest started for ${repoId}.` });
       pollStatus(result.job_id, repoId);
     } catch (err) {
-      setError(err.message || "Failed to start reingest.");
+      pushToast({ kind: "error", message: err.message || "Failed to start reingest." });
     }
   }
 
@@ -101,10 +129,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {justConnected && (
-          <p role="status" aria-live="polite" className="text-sm text-success mb-4">GitHub account connected successfully.</p>
-        )}
-
         {loading && <p aria-live="polite" className="font-mono text-sm text-muted loading-breathe">loading...</p>}
         {error && (
           <p role="alert" aria-live="polite" className="text-sm text-danger">
@@ -117,7 +141,11 @@ function Dashboard() {
 
         <div className="space-y-2">
           {repos.map((repo) => {
-            const busy = busyIds.has(repo.repo_id) || repo.status === "queued";
+            // Spinner only for ingests WE kicked off this session. A queued
+            // row from a prior session doesn't have a live stream behind
+            // it -- show it as actionable ("click to retry") rather than
+            // pretending it's running.
+            const busy = busyIds.has(repo.repo_id);
             const clickable = repo.status === "success" && !busy;
             // Dim only the informational parts of the row, not the action button.
             // The reingest button is fully functional even for failed/busy rows,

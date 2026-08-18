@@ -124,7 +124,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cursor-blink,
-  .loading-breathe {
+  .loading-breathe,
+  .toast-enter {
     animation: none;
   }
   *,
@@ -203,8 +204,93 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
- 
+
 .fade-in-markdown {
   animation: fadeInMarkdown 300ms ease-out;
+}
+
+/* =========================================================================
+   Scrollbar — slim, transparent track, low-opacity thumb on hover.
+   Two scopes:
+     1. `.scrollbar-thin` opt-in class for in-page overflow containers
+        (currently just MessageList's chat viewport).
+     2. Global rule on `html` / `body` that styles the document scrollbar
+        — same aesthetic, no opt-in needed, so every page reads as
+        "no chrome at all" when the page fits the viewport.
+   The native OS scrollbar is opaque and reads as a hard rectangle
+   against the open canvas; this replaces it with a 6px-wide track that
+   only shows a thumb on hover.
+   ========================================================================= */
+html,
+body {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+html:hover,
+body:hover,
+html:focus-within,
+body:focus-within {
+  scrollbar-color: var(--color-muted) transparent;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+html:hover::-webkit-scrollbar-thumb,
+body:hover::-webkit-scrollbar-thumb,
+html:focus-within::-webkit-scrollbar-thumb,
+body:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-muted) 50%, transparent);
+}
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scrollbar-thin:hover,
+.scrollbar-thin:focus-within {
+  scrollbar-color: var(--color-muted) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb,
+.scrollbar-thin:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-muted) 50%, transparent);
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* Toast enter — slides in from the right edge where the stack is anchored,
+   with a short deceleration curve. Matches the "restrained motion" tone. */
+@keyframes toast-slide-in {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.toast-enter {
+  animation: toast-slide-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
  

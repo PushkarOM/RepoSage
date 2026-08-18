@@ -26,7 +26,12 @@ app = FastAPI(title="RepoSage", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_allowed_origins,
+    # allow_credentials=True is REQUIRED for the httpOnly cookie flow --
+    # browsers refuse to attach cookies on cross-origin requests when
+    # the server advertises `Access-Control-Allow-Origin: *`, which is
+    # why the explicit origins list above is non-negotiable.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
