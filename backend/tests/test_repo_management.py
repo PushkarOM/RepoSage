@@ -20,7 +20,7 @@ def test_thread_messages_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
+def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session, clear_rate_limit,):
     """
     Regression test for the job_id/repo_id collision bug found this
     session: re-ingesting an already-completed repo must update the
@@ -32,6 +32,8 @@ def test_ingest_upserts_not_duplicates(client, monkeypatch, db_session):
     second ingestion, since no real Celery worker runs in tests to do
     that naturally.
     """
+    clear_rate_limit("ingest", "dana")
+
     client.post("/register", json={"username": "dana", "password": "testpass123"})
     # Login sets the httpOnly cookies on the TestClient jar; subsequent
     # requests attach them automatically. No Authorization header needed.

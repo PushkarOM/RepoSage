@@ -18,13 +18,18 @@ def test_chat_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_ingest_succeeds_with_valid_token(client, monkeypatch):
+def test_ingest_succeeds_with_valid_token(client, monkeypatch, clear_rate_limit):
     """
     Mocks the Celery task so this test doesn't actually need Redis
     running or a real repo to clone -- we're testing that auth +
     routing work, not that ingestion itself works (that's covered
     by test_chunker.py and was verified manually end-to-end).
+
+    `clear_rate_limit` zeroes the per-user ingest counter on the test
+    Redis so a counter that survived a prior run can't 429 this test.
     """
+    clear_rate_limit("ingest", "carol")
+
     client.post("/register", json={"username": "carol", "password": "testpass123"})
     # Login sets the httpOnly cookies on the TestClient jar; subsequent
     # requests attach them automatically. No Authorization header needed.
