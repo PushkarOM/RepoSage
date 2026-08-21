@@ -15,6 +15,7 @@ context on what RepoSage is and how it's organized, see the
 - [Code of conduct](#code-of-conduct)
 - [What to contribute](#what-to-contribute)
 - [Setup](#setup)
+- [Production deploy (outline)](#9-production-deploy-outline)
 - [Project layout](#project-layout)
 - [Development workflow](#development-workflow)
 - [Code conventions](#code-conventions)
@@ -203,6 +204,55 @@ build` manually. API docs are at <http://localhost:8000/docs>.
 There's also a `docker-compose.dev.yml` that bind-mounts the source and
 runs uvicorn with `--reload`. Use it when you want fast iteration
 without a full rebuild.
+
+### 9. Production deploy (outline)
+
+This section is for the maintainers; **contributors don't need it to
+work on the project**. The local path above is the supported dev story
+— SQLite + Docker Compose is enough to land a PR.
+
+The production target (decided 2026-08-19) is:
+
+- **Frontend + backend:** [Vercel](https://vercel.com/) — the static
+  frontend ships from the existing multi-stage `frontend/Dockerfile`'s
+  dist artifact, and the FastAPI backend runs as Vercel serverless
+  functions so the whole stack lives on one platform.
+- **Postgres:** [Supabase](https://supabase.com/) — free tier is always-on
+  (500 MB, 2 GB egress/mo). Supabase was picked over the older
+  Neon setup because Neon's free tier auto-suspends after ~5 min
+  idle and pays a 1-5s cold-start wake on the next connection,
+  which becomes a per-deploy UX hit on Vercel. Supabase is always-on.
+
+If you're wiring up the deploy (or you've inherited a broken one):
+
+1. **Create a Supabase project.** Copy the **pooled** connection string
+   from the Connect dialog (port 6543 / Supavisor pooler) — *not*
+   the direct one (port 5432). Vercel functions open many short-lived
+   connections and the direct cap will 503 under load.
+2. **Append `?sslmode=require`** to the connection string. Already
+   required for Supabase from any non-localhost client.
+3. **Run migrations once**:
+   ```bash
+   cd backend
+   DATABASE_URL=postgres://<pooled-url-with-sslmode> alembic upgrade head
+   ```
+4. **Set the env vars in Vercel.** Every key from `backend/.env.example`
+   is needed in production except `CLONE_DIR` and the Redis URL —
+   those get swapped for Vercel-managed equivalents (or short-lived
+   in-memory stand-ins for the serverless tier). The cookies will need
+   `COOKIE_SECURE=true` and a real public origin in `CORS_ALLOWED_ORIGINS`.
+5. **Wiring caveats:**
+   - Celery + Redis Stack are not a natural fit for Vercel serverless.
+     The Celery worker needs long-lived process hosting (Railway / Fly /
+     Render for the worker, or move the embedded work into the API as
+     background functions). Open question — see `ISSUES.md`.
+   - Chroma also wants persistent storage and process hosting. Same
+     problem class. The likely shape is **Chromadb Cloud** (or
+     self-hosted Chroma on the same long-lived worker host as Celery).
+
+The list above is the *outline*; full deploy steps will live in a
+dedicated `docs/deploy.md` once the Vercel project actually exists.
+For now, `ProjectPlan.md` Phase 5 is the canonical status log.
 
 ## Project layout
 

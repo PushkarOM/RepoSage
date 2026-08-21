@@ -18,19 +18,19 @@ along the way.
 | Phase 2.5 | ✅ Done | Repo identity & multi-conversation support (mid-build insertion) |
 | Phase 3 | ✅ Done | Security / multi-tenancy: rate limiting, GitHub OAuth for private repos |
 | Phase 4 | ✅ Done | Agent / RAG depth: hybrid search, dedup, more tools, eval harness |
-| Phase 5 | ⏳ Next | Ops maturity: Render + auto-deploy (Dockerfile already shipped) |
+| Phase 5 | 🟡 In progress | Ops maturity: Vercel + Supabase (target chosen, wiring pending) |
 | Polish | ✅ Done (initial) | Frontend UX sweep + streaming polish + landing refresh |
 | Hardening | ✅ Done (2026-08-03 → 2026-08-04) | Pre-OSS ops/UX: SSE ingest stream, JWT dual-token refresh, slim scrollbar, save/cancel icons, httpOnly-cookie auth migration |
 
 ## Phase 1 — Foundation
 
-- [x] Migrate SQLite → Postgres (Neon, managed, serverless)
+- [x] Migrate SQLite → Postgres (initially Neon, serverless; later moved to Supabase in 2026-08-19 for the always-on, no-cold-start story — see Phase 5)
 - [x] Alembic migrations wired up, verified with a real schema change (`is_active` column)
 - [x] Redis-backed agent memory (`RedisSaver` → `AsyncRedisSaver`, via Redis Stack), verified surviving container restarts
 
 **Bugs found & fixed along the way** (worth keeping — good interview material):
 - `connect_args` computed correctly but never actually passed to `create_engine()`
-- Neon silently drops idle connections (serverless) — fixed with `pool_pre_ping=True`
+- (Historical — Neon era) Neon silently drops idle connections (serverless) — fixed with `pool_pre_ping=True`. Supabase's always-on tier doesn't need this, but the guard stayed in.
 - `RedisSaver` needs RediSearch/RedisJSON modules — switched to `redis/redis-stack-server`
 - Sync `RedisSaver` incompatible with `agent.astream()` — required full async rewrite (`AsyncRedisSaver`, `ainvoke`, FastAPI `lifespan` startup)
 - `docker compose restart` vs `docker compose build` confusion — restart doesn't pick up code changes
@@ -522,10 +522,19 @@ Verification: 34/34 pytest tests pass (31 prior + 3 new logout
 tests). `npm run lint` → 12 errors / 0 warnings (matches the prior
 baseline). `npm run build` → success.
 
-## Phase 5 — Ops maturity (next)
+## Phase 5 — Ops maturity (deploy target chosen; wiring pending)
 
 - [x] Multi-stage frontend Dockerfile (build inside the image, not a manual pre-step) — already shipped with the landing refresh; `frontend/Dockerfile` has a `node:22-alpine` build stage that runs `npm run build`, then a `nginx:alpine` runtime stage that copies the dist into `/usr/share/nginx/html`. No manual pre-step needed.
-- [ ] Move off manually-managed EC2 to Render (or similar) for always-on hosting
+- [x] **Hosting target decided (2026-08-19)** — Vercel (one platform for
+      both static frontend and the FastAPI backend as serverless
+      functions) + Supabase Postgres (always-on; no cold-start). See
+      `memory/reposage-deploy-target.md` for the cold-start rationale
+      against Neon. Docs (README.md, CONTRIBUTING.md, `.env.example`)
+      updated; wiring (Vercel project + env vars + `alembic upgrade
+      head` against the prod DB) still pending.
+- [ ] Apply the cold-start `checkAuth` retry-on-network-error mitigation
+      so the first request after deploy doesn't bounce users to `/login`
+      while the API is still warming up. Tracked in memory.
 - [ ] Auto-deploy on merge to `main`
 
 ## Future — feature work
@@ -542,7 +551,7 @@ baseline). `npm run build` → success.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Postgres hosting | Neon (managed) | Free tier auto-resumes on query (vs. Supabase's manual restore-after-pause); leaner since we only needed Postgres |
+| Postgres hosting | Supabase (always-on free tier) | Originally Neon; switched 2026-08-19 after discovering Neon free tier auto-suspends after ~5 min idle and pays a 1-5s cold-start wake on the next connection — a real recurring UX hit on Vercel. Supabase free tier is always-on (500 MB, 2 GB egress/mo) and has a first-class Vercel marketplace integration. SQLite stays as the local-dev default so OSS contributors get zero-config setup; models use only portable SQLAlchemy types, so no schema change was needed. |
 | Vector DB hosting | Self-hosted Chroma (Docker service) | Already working, already debugged a real concurrency bug in it; abstracted behind `get_vectorstore()` for an easy future swap |
 | Agent memory | Redis (`AsyncRedisSaver`, Redis Stack) | Survives restarts, shareable across replicas; async variant required once true token streaming was added |
 | LLM provider | Gemini (default) with Groq as alt, pluggable via `LLM_PROVIDER` | Gemini 2.5 Flash-Lite is fine in production with billing enabled; Groq was used heavily during development for higher free-tier quota and lower latency |

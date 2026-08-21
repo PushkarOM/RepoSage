@@ -45,7 +45,7 @@ tool-using LLM agent with hybrid (vector + BM25) retrieval.
    LangGraph checkpointer (`AsyncRedisSaver` over Redis Stack). Threads
    survive restarts and are scoped per-user.
 7. **Keeps a per-user record of ingested repos and chat threads** in
-   PostgreSQL (Neon in prod, SQLite for local dev), so users can resume
+   PostgreSQL (Supabase in prod, SQLite for local dev), so users can resume
    chatting without re-ingesting.
 8. **Exposes everything through a cookie-authenticated FastAPI backend** with a
    per-user rate limiter and a React frontend for the full
@@ -90,7 +90,7 @@ embedded Chroma files directly, which caused intermittent index corruption
 | Vector DB | ChromaDB, standalone server | Runs as its own service so both `api` and `worker` can safely share it concurrently |
 | Async jobs | Celery + Redis Stack + Redis pub/sub | Standard Python async task queue; ingest progress streamed via SSE, not polling |
 | API | FastAPI | httpOnly-cookie auth (`python-jose` for the underlying JWT), SQLAlchemy + Alembic, per-user rate limiting |
-| Database | Postgres (Neon in prod) / SQLite (dev) | Alembic-managed schema; three tables: `users`, `ingested_repos`, `chat_threads` |
+| Database | Postgres (Supabase in prod) / SQLite (dev) | Alembic-managed schema; three tables: `users`, `ingested_repos`, `chat_threads` |
 | Frontend | React 19 (Vite) + Tailwind v4 + shadcn-style Button | Login → ingest → chat with streaming + per-repo thread history |
 | Infra | Docker Compose | `api`, `worker`, `redis`, `chroma`, `frontend` services sharing a persistent volume |
 | CI | GitHub Actions | Runs the pytest suite on every push/PR |
@@ -307,9 +307,12 @@ thing that only shows up under real usage, not local testing:
 - **An Elastic IP** is attached so the public address stays stable
   across instance stop/start cycles (stopping the instance when not
   actively demoing avoids paying for idle compute).
-- **Postgres is hosted on Neon**, not the EC2 instance. The dev SQLite
+- **Postgres is hosted on Supabase**, not the EC2 instance. The dev SQLite
   is fine for local; production needs a serverless-friendly managed DB
   because the EC2 instance is intended to be turned off between demos.
+  Supabase was picked over Neon specifically because Neon's free tier
+  auto-suspends after ~5 min idle and pays a 1-5s cold-start wake on the
+  next connection -- Supabase's free tier is always-on.
 - **Billing is enabled** on the LLM API keys. The free tier's daily
   request quota (as low as 20 requests/day on some Gemini models at
   time of testing) is fine for solo development but gets exhausted
@@ -350,13 +353,16 @@ explicitly:
 
 ## Roadmap
 
-### Phase 5 — Ops maturity
+### Phase 5 — Ops maturity (deploy target chosen)
 - [x] Multi-stage frontend Dockerfile (build inside the image, not a
       manual pre-step) — shipped with the landing refresh; the
       `frontend/Dockerfile` runs `npm run build` in a `node:22-alpine`
       stage and copies the dist into `nginx:alpine`
-- [ ] Move off manually-managed EC2 to Render (or similar) for
-      always-on hosting
+- [x] **Hosting target decided**: Vercel (one platform for both
+      frontend and the FastAPI backend as serverless functions),
+      paired with Supabase Postgres (always-on; no cold-start).
+      See `ProjectPlan.md` for the rationale.
+- [ ] Wire it up: Vercel project + env vars + Supabase + `alembic upgrade head`
 - [ ] Auto-deploy on merge to `main`
 
 ### Future

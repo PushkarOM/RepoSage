@@ -7,17 +7,18 @@ def _build_connect_args() -> dict:
     """
     Per-driver connection kwargs. SQLite needs check_same_thread=False so
     FastAPI can serve a single request across threads. Postgres needs an
-    explicit connect_timeout so a wedged Neon pooler doesn't leave
-    `db.query()` blocked at the TCP handshake for the OS default
-    (~2 min on Linux, ~75 s on macOS). The 5 s budget is generous for
-    Neon on a healthy day and short enough to surface a real outage
-    as a fast 500 instead of an indefinite hang.
+    explicit connect_timeout so a wedged managed-DB pooler (Supabase
+    Supavisor, Neon, etc.) doesn't leave `db.query()` blocked at the
+    TCP handshake for the OS default (~2 min on Linux, ~75 s on macOS).
+    The 5 s budget is generous for Supabase/Neon on a healthy day
+    and short enough to surface a real outage as a fast 500 instead of
+    an indefinite hang.
 
     Without connect_timeout, after a `docker compose down/up` (cold
     pool, no cached connections) the first request that touches the DB
-    will silently sit forever if Neon's pooler has a transient blip --
-    the symptom looks like "the refresh token is invalid" because the
-    frontend's loader never resolves.
+    will silently sit forever if the remote pooler has a transient
+    blip -- the symptom looks like "the refresh token is invalid"
+    because the frontend's loader never resolves.
     """
     if settings.database_url.startswith("sqlite"):
         return {"check_same_thread": False}
@@ -29,9 +30,11 @@ def _build_connect_args() -> dict:
 # and SQLite's default driver assumes one thread per connection.
 # pool_pre_ping=True issues a cheap "SELECT 1" on checkout so a server-
 # killed idle connection is recycled before our query hits it. pool_recycle
-# forces connections back through pre-ping after 280 s -- under Neon's
-# ~5 min idle-disconnect window, so a pooled connection that survived
-# pre_ping can't then be silently severed before the next checkout.
+# forces connections back through pre-ping after 280 s -- under the
+# typical managed-Postgres ~5 min idle-disconnect window, so a pooled
+# connection that survived pre_ping can't then be silently severed
+# before the next checkout. (Originally tuned against Neon; kept for
+# Supabase because the same race exists on any pooled DB.)
 engine = create_engine(
     settings.database_url,
     connect_args=_build_connect_args(),
