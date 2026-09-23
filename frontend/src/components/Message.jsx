@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Copy, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -110,16 +111,37 @@ function Message({ who, text, streaming = false }) {
         components={{
           code({ inline, className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={vscDarkPlus}
-                language={match[1]}
-                PreTag="div"
-                customStyle={{ borderRadius: "8px", fontSize: "13px", margin: "8px 0" }}
-              >
-                {String(children).replace(/\n$/, "")}
-              </SyntaxHighlighter>
-            ) : (
+            if (!inline && match) {
+              const codeText = String(children).replace(/\n$/, "");
+              const [copied, setCopied] = useState(false);
+
+              const handleCopy = async () => {
+                await navigator.clipboard.writeText(codeText);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              };
+
+              return (
+                <div className="relative group">
+                  <button
+                    onClick={handleCopy}
+                    className="absolute top-2 right-2 p-1.5 rounded-md bg-ink/20 text-muted opacity-0 group-hover:opacity-100 transition-opacity hover:text-accent hover:bg-ink/40"
+                    aria-label="Copy code"
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                  <SyntaxHighlighter
+                    style={vscDarkPlus}
+                    language={match[1]}
+                    PreTag="div"
+                    customStyle={{ borderRadius: "8px", fontSize: "13px", margin: "8px 0" }}
+                  >
+                    {codeText}
+                  </SyntaxHighlighter>
+                </div>
+              );
+            }
+            return (
               <code className="text-accent" {...props}>
                 {children}
               </code>

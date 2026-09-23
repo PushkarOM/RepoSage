@@ -73,7 +73,10 @@ function Chat() {
       // 429 (rate limit) lives mid-conversation; toast is the right surface.
       // Other failures are surfaced inline so the user can read and retry.
       if (err.status === 429) {
-        pushToast({ kind: "error", message: err.message });
+        pushToast({
+          kind: "info",
+          message: "You've hit today's free-tier chat limit. It resets at midnight UTC, or link your GitHub account in the dashboard for higher limits."
+        });
       } else {
         setError(err.message);
       }

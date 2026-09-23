@@ -36,6 +36,47 @@ export class ApiError extends Error {
   }
 }
 
+// True iff `err` is a definitive "not logged in" signal -- a 401 from
+// /refresh on the silent-mount path, where the refresh cookie is missing
+// or revoked. Everything else (5xx, network TypeError, 408/425/429) is
+// treated as transient and is retried by `transientRetry` before it
+// reaches this check.
+export function isAuthFailure(err) {
+  return err instanceof ApiError && err.status === 401;
+}
+
+// Retry helper for transient network/server failures. Skips retry on
+// 4xx responses (those are caller bugs, not transient), EXCEPT for the
+// handful of 4xx codes that genuinely mean "try again later" (408
+// Request Timeout, 425 Too Early, 429 Too Many Requests). Network
+// errors (fetch TypeError) are always retried. Exponential backoff with
+// small jitter so simultaneous cold-start retries from multiple tabs
+// don't synchronize into a thundering herd.
+async function transientRetry(fn, { attempts = 3, baseMs = 250 } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (
+        err instanceof ApiError &&
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 408 &&
+        err.status !== 425 &&
+        err.status !== 429
+      ) {
+        throw err;
+      }
+      if (i === attempts - 1) break;
+      // 250ms, 500ms, 1000ms with 0-100ms jitter.
+      await new Promise((r) => setTimeout(r, baseMs * 2 ** i + Math.random() * 100));
+    }
+  }
+  throw lastErr;
+}
+
 async function handleResponse(response) {
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
@@ -75,19 +116,37 @@ async function refreshTokens() {
     // Synchronously seed the slot so a second concurrent caller can't
     // observe `null` and create its own Promise. The body of the IIFE
     // is the only thing that resolves/rejects the shared Promise.
+    //
+    // The Promise stored in refreshInFlight is the WHOLE retry sequence,
+    // not a single fetch attempt -- otherwise two concurrent callers
+    // could each fire their own 3-attempt burst and double the load on
+    // the server during a cold start.
     refreshInFlight = (async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/refresh`, {
-          method: "POST",
-          credentials: "include",
+        await transientRetry(async () => {
+          const response = await fetch(`${API_BASE}/api/refresh`, {
+            method: "POST",
+            credentials: "include",
+          });
+          if (response.status === 401) {
+            // Refresh cookie missing or revoked -- the cookie IS the
+            // credential, so this is a definitive "not logged in".
+            // Do NOT retry; transientRetry would just see it again.
+            throw new ApiError("Not authenticated", 401);
+          }
+          if (!response.ok) {
+            // 5xx / 408 / 425 / 429: transient. transientRetry will
+            // classify these as retryable and loop with backoff.
+            throw new ApiError(
+              `Refresh failed: ${response.status}`,
+              response.status,
+            );
+          }
+          // Drain the body so the browser fully commits Set-Cookie BEFORE
+          // we clear refreshInFlight -- otherwise the next caller could
+          // race in with a request that races against the cookie write.
+          await response.json();
         });
-        if (!response.ok) {
-          throw new ApiError("Refresh failed", response.status);
-        }
-        // Drain the body so the browser fully commits Set-Cookie BEFORE
-        // we clear refreshInFlight -- otherwise the next caller could
-        // race in with a request that races against the cookie write.
-        await response.json();
       } finally {
         // Reset on settle so future 401s can trigger a fresh refresh.
         refreshInFlight = null;

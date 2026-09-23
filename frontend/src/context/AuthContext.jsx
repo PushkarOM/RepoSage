@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { logout as logoutApi, refreshTokens } from "../lib/api";
+import { isAuthFailure, logout as logoutApi, refreshTokens } from "../lib/api";
 
 const AuthContext = createContext(null);
 
@@ -22,12 +22,23 @@ export function AuthProvider({ children }) {
   // dashboard fires listRepos() before this resolves, both share the same
   // /refresh Promise and the second one doesn't fail because the first
   // rotated the refresh cookie out from under it.
+  //
+  // refreshTokens wraps the fetch in transientRetry, so by the time we
+  // get here, network errors and 5xx have already been retried 3x with
+  // backoff. A remaining rejection is therefore either a definitive
+  // 401 (refresh cookie missing/revoked -- genuinely logged out) or
+  // an exhausted retry (server is genuinely down, not just cold). We
+  // can't tell those apart from this side of the network, so the safe
+  // move in both cases is `isAuthenticated=false` -- the difference is
+  // that with the retry in place, the cold-start case is now a
+  // multi-second wait, not an instant bounce. The next user-initiated
+  // /refresh (e.g. from a login click) will hit a warm function.
   const checkAuth = useCallback(async () => {
     try {
       await refreshTokens();
       setIsAuthenticated(true);
-    } catch {
-      setIsAuthenticated(false);
+    } catch (err) {
+      setIsAuthenticated(!isAuthFailure(err));
     } finally {
       setAuthChecked(true);
     }
